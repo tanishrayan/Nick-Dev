@@ -6,13 +6,15 @@ public final class Constants {
     public static final String M_FR = "frontRight";
     public static final String M_BL = "backLeft";
     public static final String M_BR = "backRight";
+
+    public static final String LIMELIGHT_NAME = "limelight";
     // --- Drive ---
     public static final double DRIVE_SCALE = 0.75;
 
     // VISION CONSTANTS
     public static final class Vision {
         // Limelight network table name
-        public static final String LIMELIGHT_NAME = "limelight";
+
 
         // Shooting lookup tables (distance → values)
         // Hood angles by distance (inches)
