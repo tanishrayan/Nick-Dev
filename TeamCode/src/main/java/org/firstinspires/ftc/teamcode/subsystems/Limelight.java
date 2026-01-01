@@ -13,12 +13,7 @@ public class Limelight {
 
     double tX;
     double tY;
-    double distance;
-    double CAM_DEG = 27.3;//25.85
-    double CAM_H = 11.5;
-    double TARGET_H = 29.5;
-    int id = -1;
-    int motifID = -1;
+
 
     public Limelight(HardwareMap hardwareMap) {
         limelight = hardwareMap.get(Limelight3A.class, Constants.LIMELIGHT_NAME);

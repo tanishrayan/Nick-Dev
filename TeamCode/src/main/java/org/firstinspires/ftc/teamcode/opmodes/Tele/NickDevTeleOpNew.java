@@ -3,11 +3,13 @@ package org.firstinspires.ftc.teamcode.opmodes.Tele;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.subsystems.DriveSubsystem;
 
+@TeleOp(name = "nick dev teleop")
 public class NickDevTeleOpNew extends OpMode {
     private Follower follower;
     public static Pose startPose;
