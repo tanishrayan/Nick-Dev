@@ -12,8 +12,8 @@ public class TestTurret extends OpMode {
     private double servo1Position;
     private double servo2Position;
 
-    private double smallIncrement = 0.05;
-    private double increment = 0.1;
+    private double smallIncrement = 0.025;
+    private double increment = 0.05;
 
 
     /*
