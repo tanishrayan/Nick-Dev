@@ -1,8 +1,11 @@
 package org.firstinspires.ftc.teamcode.opmodes.Tele;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.Servo;
 
+
+@TeleOp(name = "testing turret servo positions")
 public class TestTurret extends OpMode {
     private Servo servo2, servo1;
 
@@ -11,6 +14,15 @@ public class TestTurret extends OpMode {
 
     private double smallIncrement = 0.05;
     private double increment = 0.1;
+
+
+    /*
+    min:
+    exactly forward:
+    exactly backward:
+    max:
+
+     */
 
 
 
