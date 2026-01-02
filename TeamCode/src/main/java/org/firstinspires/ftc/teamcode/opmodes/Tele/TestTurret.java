@@ -18,7 +18,7 @@ public class TestTurret extends OpMode {
 
     /*
     min:
-    exactly forward:
+    exactly forward: 0.95
     exactly backward:
     max:
 
@@ -31,8 +31,8 @@ public class TestTurret extends OpMode {
         servo1 = hardwareMap.get(Servo.class, "rightServo");
         servo2 = hardwareMap.get(Servo.class, "leftServo");
 
-        servo1.setPosition(0);
-        servo2.setPosition(0);
+        servo1.setPosition(0.415);
+        servo2.setPosition(0.415);
 
         telemetry.addData("servo 1 position", servo1.getPosition());
         telemetry.addData("servo 2 position", servo2.getPosition());
