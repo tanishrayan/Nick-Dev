@@ -18,6 +18,7 @@ public class TeleOpNetherlands extends LinearOpMode {
     private DcMotor slideMotorRight;
 */
     private DcMotor bl, br, fl, fr;
+    private DcMotor test;
     // Arm servos
     /*
     private CRServo armServoLeft;
@@ -79,6 +80,8 @@ public class TeleOpNetherlands extends LinearOpMode {
         fl = hardwareMap.get(DcMotor.class, "frontLeft");
         br = hardwareMap.get(DcMotor.class, "backRight");
         fr = hardwareMap.get(DcMotor.class, "frontRight");
+        test = hardwareMap.get(DcMotor.class, "test");
+
 
         fl.setDirection(DcMotorSimple.Direction.REVERSE);
         bl.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -110,7 +113,7 @@ public class TeleOpNetherlands extends LinearOpMode {
         waitForStart();
 
         while (opModeIsActive()) {
-
+            test.setPower(1);
             double y = -gamepad1.left_stick_y;
             double x = -gamepad1.left_stick_x;
             double v = gamepad1.right_stick_y;
