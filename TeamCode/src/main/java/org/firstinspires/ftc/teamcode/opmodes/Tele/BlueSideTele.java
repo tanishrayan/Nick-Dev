@@ -28,8 +28,8 @@ public class BlueSideTele extends OpMode {
     private Limelight3A       limelight;
 
     // ── Field coordinates (0,0 = field center) ────────────────
-    private static final double GOAL_X = 60.0;  // TODO: measure actual blue goal
-    private static final double GOAL_Y = 60.0;
+    private static final double GOAL_X = 72.0;  // TODO: measure actual blue goal
+    private static final double GOAL_Y = -72.0;
 
     // ── Limelight constants ────────────────────────────────────
     private static final double kP_LIMELIGHT          = 0.015;
