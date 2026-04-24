@@ -40,16 +40,16 @@ public class BlueAutoNearSidePathingTest extends OpMode {
 
     // Define waypoints
     private final Pose startPose = new Pose(0, 0, Math.toRadians(0));
-    private final Pose shootPose1 = new Pose(-22, 53, Math.toRadians(0));
-    private final Pose controlPose1 = new Pose(-30, 70, Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(18, 73, Math.toRadians(0));
-    private final Pose shootPose2 = new Pose(-22, 53, Math.toRadians(0));
-    private final Pose gateOpener = new Pose(21, 72, Math.toRadians(-40));
-    private final Pose shootPose3 = new Pose(-22, 53, Math.toRadians(0));
-    private final Pose shootPose4 = new Pose(-22 , 53, Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(18, 53, Math.toRadians(0));
-    private final Pose shootPose5 = new Pose(-22 , 53, Math.toRadians(0));
-    private final Pose parkPose = new Pose(5, 53, Math.toRadians(0));
+    private final Pose shootPose1 = new Pose(-22, 50, Math.toRadians(0));
+    private final Pose controlPose1 = new Pose(-21, 77, Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(16, 74.5, Math.toRadians(0));
+    private final Pose shootPose2 = new Pose(-22, 50, Math.toRadians(0));
+    private final Pose gateOpener = new Pose(22, 70.5, Math.toRadians(-40));
+    private final Pose shootPose3 = new Pose(-22, 50, Math.toRadians(0));
+    private final Pose shootPose4 = new Pose(-22 , 50, Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(16, 50, Math.toRadians(0));
+    private final Pose shootPose5 = new Pose(-22 , 50, Math.toRadians(0));
+    private final Pose parkPose = new Pose(5, 50, Math.toRadians(0));
 
 
     // Path chains
