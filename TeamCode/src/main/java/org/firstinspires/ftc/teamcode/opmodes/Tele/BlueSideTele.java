@@ -269,7 +269,7 @@ public class BlueSideTele extends OpMode {
         rightTriggerWasPressed = rightTriggerNow;
 
         // ── Auto-stop intake when fully loaded ─────────────────
-        if (intakeTransfer.isIntaking() && intakeTransfer.isFullyLoaded()) {
+        if (intakeTransfer.isIntaking() && intakeTransfer.isFullyLoaded()&& shootState == ShootState.IDLE) {
             intakeTransfer.setIdle();
         }
 

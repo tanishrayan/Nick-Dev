@@ -16,7 +16,7 @@ import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 public class Drivetrain {
 
     // ── Speed cap ──────────────────────────────────────────────
-    private static final double MAX_SPEED = 0.8; // 0.0 to 1.0
+    private static final double MAX_SPEED = 1.0; // 0.0 to 1.0
 
     // ── Hardware ───────────────────────────────────────────────
     private DcMotor frontRight, frontLeft, backRight, backLeft;
@@ -40,7 +40,7 @@ public class Drivetrain {
 
         imu = hardwareMap.get(IMU.class, "imu");
         IMU.Parameters parameters = new IMU.Parameters(new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
+                RevHubOrientationOnRobot.LogoFacingDirection.RIGHT,
                 RevHubOrientationOnRobot.UsbFacingDirection.UP));
         imu.initialize(parameters);
         imu.resetYaw();
@@ -49,7 +49,7 @@ public class Drivetrain {
         odo = hardwareMap.get(GoBildaPinpointDriver.class, "odo");
         odo.setOffsets(81.3, 63.4, DistanceUnit.MM);
         odo.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
-        odo.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.FORWARD,
+        odo.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.REVERSED,
                 GoBildaPinpointDriver.EncoderDirection.REVERSED);
         odo.resetPosAndIMU();
 
@@ -59,7 +59,7 @@ public class Drivetrain {
     public void handleDrivetrain(Gamepad gp1) {
         odo.update();
 
-        double rightStickX = gp1.right_stick_x;
+        double rightStickX = -gp1.right_stick_x;
         if (Math.abs(rightStickX) < 0.05) rightStickX = 0;
 
         double x  = -gp1.left_stick_x;
@@ -72,7 +72,8 @@ public class Drivetrain {
     public void drive(double forward, double strafe, double rotate) {
         double theta   = Math.atan2(forward, strafe);
         double r       = Math.hypot(strafe, forward);
-        double heading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
+        double heading = Math.toRadians(-getHeading());
+
 
         double rotatedTheta = AngleUnit.normalizeRadians(theta - heading);
 

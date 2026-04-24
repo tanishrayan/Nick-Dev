@@ -12,13 +12,12 @@ public class IntakeAndTransfer {
     // ── Hardware ───────────────────────────────────────────────
     private DcMotorEx intakeMotor;
     private Servo     intakePivot;
-    private Servo intakePivot2; // second pivot servo
+    private Servo     intakePivot2;
 
-    // ── Break beams (one BeambreakSensor per digital channel pin) ─
-    // Each physical sensor spans two pins — both are checked per slot
-    private BeambreakSensor beam1, break1; // slot 1 — top (first ball to enter)
-    private BeambreakSensor beam2, break2; // slot 2 — middle
-    private BeambreakSensor beam3, break3; // slot 3 — front (last ball, closest to shooter)
+    // ── Break beams — one per ball slot ───────────────────────
+    private BeambreakSensor beamTop;   // port 0 — first ball to enter, closest to shooter
+    private BeambreakSensor beamMid;   // port 2 — middle ball
+    private BeambreakSensor beamFront; // port 4 — last ball to enter, closest to ground
 
     // ── Pivot positions ────────────────────────────────────────
     private static final double PIVOT_RETRACTED = 0.44;
@@ -41,17 +40,13 @@ public class IntakeAndTransfer {
         intakeMotor.setDirection(DcMotorSimple.Direction.REVERSE);
         intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         intakeMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        intakePivot2 = hardwareMap.get(Servo.class, "intakePivot2"); // match config name
 
-        intakePivot = hardwareMap.get(Servo.class, "intakePivot");
+        intakePivot  = hardwareMap.get(Servo.class, "intakePivot");
+        intakePivot2 = hardwareMap.get(Servo.class, "intakePivot2");
 
-        // Config names must match robot config file exactly
-        beam1  = new BeambreakSensor(hardwareMap, "beam1");
-        break1 = new BeambreakSensor(hardwareMap, "break1");
-        beam2  = new BeambreakSensor(hardwareMap, "beam2");
-        break2 = new BeambreakSensor(hardwareMap, "break2");
-        beam3  = new BeambreakSensor(hardwareMap, "beam3");
-        break3 = new BeambreakSensor(hardwareMap, "break3");
+        beamTop   = new BeambreakSensor(hardwareMap, "beamTop");
+        beamMid   = new BeambreakSensor(hardwareMap, "beamMid");
+        beamFront = new BeambreakSensor(hardwareMap, "beamFront");
 
         setIdle();
     }
@@ -63,17 +58,17 @@ public class IntakeAndTransfer {
         switch (state) {
             case IDLE:
                 intakePivot.setPosition(PIVOT_RETRACTED);
-                intakePivot2.setPosition(1-PIVOT_RETRACTED); // or (1.0 - x) if it's reversed
+                intakePivot2.setPosition(1.0 - PIVOT_RETRACTED);
                 intakeMotor.setPower(0);
                 break;
             case INTAKING:
                 intakePivot.setPosition(Math.max(PIVOT_FLOOR, PIVOT_DEPLOYED));
-                intakePivot2.setPosition(1-Math.max(PIVOT_FLOOR, PIVOT_DEPLOYED));
+                intakePivot2.setPosition(1.0 - Math.max(PIVOT_FLOOR, PIVOT_DEPLOYED));
                 intakeMotor.setPower(INTAKE_POWER);
                 break;
             case OUTTAKING:
                 intakePivot.setPosition(Math.max(PIVOT_FLOOR, PIVOT_DEPLOYED));
-                intakePivot2.setPosition(1-Math.max(PIVOT_FLOOR, PIVOT_DEPLOYED));
+                intakePivot2.setPosition(1.0 - Math.max(PIVOT_FLOOR, PIVOT_DEPLOYED));
                 intakeMotor.setPower(OUTTAKE_POWER);
                 break;
         }
@@ -88,32 +83,28 @@ public class IntakeAndTransfer {
         else setState(IntakeState.INTAKING);
     }
 
-    // ── Ball detection ────────────────────────────────────────
-    // A slot is occupied if either pin of its sensor pair is blocked
+    // ── Break beam reads ───────────────────────────────────────
 
-    public boolean isSlot1Present() { return beam1.isBlocked() || break1.isBlocked(); } // top
-    public boolean isSlot2Present() { return beam2.isBlocked() || break2.isBlocked(); } // middle
-    public boolean isSlot3Present() { return beam3.isBlocked() || break3.isBlocked(); } // front
+    public boolean isTopBallPresent()   { return beamTop.isBlocked(); }
+    public boolean isMidBallPresent()   { return beamMid.isBlocked(); }
+    public boolean isFrontBallPresent() { return beamFront.isBlocked(); }
 
     public boolean isFullyLoaded() {
-        return isSlot1Present() && isSlot2Present() && isSlot3Present();
+        return isTopBallPresent() && isMidBallPresent() && isFrontBallPresent();
     }
 
     public boolean isEmpty() {
-        return !isSlot1Present() && !isSlot2Present() && !isSlot3Present();
+        return !isTopBallPresent() && !isMidBallPresent() && !isFrontBallPresent();
     }
 
     public int getBallCount() {
-        return (isSlot1Present() ? 1 : 0)
-                + (isSlot2Present() ? 1 : 0)
-                + (isSlot3Present() ? 1 : 0);
+        return (isTopBallPresent()   ? 1 : 0)
+                + (isMidBallPresent()   ? 1 : 0)
+                + (isFrontBallPresent() ? 1 : 0);
     }
 
-    /**
-     * True when front slot is clear — ball has left toward shooter.
-     * Used by shooting sequence to confirm a ball has fired.
-     */
-    public boolean isFrontBeamClear() { return !isSlot3Present(); }
+    /** True when front beam is clear — ball has left toward shooter */
+    public boolean isFrontBeamClear() { return !isFrontBallPresent(); }
 
     // ── Getters ───────────────────────────────────────────────
 
@@ -126,12 +117,15 @@ public class IntakeAndTransfer {
 
     public void updateTelemetry() {
         if (telemetry == null) return;
-        telemetry.addData("Intake State",   currentState);
-        telemetry.addData("Ball Count",     getBallCount() + " / 3");
-        telemetry.addData("Slot 1 (top)",   isSlot1Present() ? "BALL ●" : "empty ○");
-        telemetry.addData("Slot 2 (mid)",   isSlot2Present() ? "BALL ●" : "empty ○");
-        telemetry.addData("Slot 3 (front)", isSlot3Present() ? "BALL ●" : "empty ○");
-        telemetry.addData("Pivot Position", "%.2f", intakePivot.getPosition());
-        telemetry.addData("Motor Power",    "%.2f", intakeMotor.getPower());
+        telemetry.addData("Intake State",    currentState);
+        telemetry.addData("Ball Count",      getBallCount() + " / 3");
+        telemetry.addData("Top  (shooter)",  isTopBallPresent()   ? "BALL ●" : "empty ○");
+        telemetry.addData("Mid",             isMidBallPresent()   ? "BALL ●" : "empty ○");
+        telemetry.addData("Front (ground)",  isFrontBallPresent() ? "BALL ●" : "empty ○");
+        telemetry.addData("Pivot Position",  "%.2f", intakePivot.getPosition());
+        telemetry.addData("Motor Power",     "%.2f", intakeMotor.getPower());
+        beamTop.updateTelemetry();
+        beamMid.updateTelemetry();
+        beamFront.updateTelemetry();
     }
 }
