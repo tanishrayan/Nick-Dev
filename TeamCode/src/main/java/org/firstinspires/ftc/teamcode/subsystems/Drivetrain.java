@@ -31,8 +31,7 @@ public class Drivetrain {
         backLeft   = hardwareMap.get(DcMotor.class, "backLeft");
         backRight  = hardwareMap.get(DcMotor.class, "backRight");
 
-        backLeft.setDirection(DcMotor.Direction.REVERSE);
-        frontRight.setDirection(DcMotor.Direction.REVERSE);
+        frontLeft.setDirection(DcMotor.Direction.REVERSE);
 
         frontLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         backLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -63,7 +62,7 @@ public class Drivetrain {
         double rightStickX = gp1.right_stick_x;
         if (Math.abs(rightStickX) < 0.05) rightStickX = 0;
 
-        double x  = gp1.left_stick_x;
+        double x  = -gp1.left_stick_x;
         double y  = -gp1.left_stick_y;
         double rx = rightStickX;
 
