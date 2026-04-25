@@ -18,7 +18,7 @@ import com.pedropathing.paths.PathChain;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.util.Timer;
 
-@Autonomous(name = "Blue Pedro Pathing Autonomous", group = "Autonomous")
+@Autonomous(name = "Testing ", group = "Autonomous")
 @Configurable
 public class BlueAutoNearSidePathingTest extends OpMode {
     private TelemetryManager panelsTelemetry;
