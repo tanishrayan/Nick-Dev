@@ -25,7 +25,7 @@ import java.util.List;
 
 @Autonomous(name = "BlueTesting", group = "Autonomous")
 @Configurable
-public class BlueAutoNearSidePathingTest extends OpMode {
+public class RedAutoFarSidePathingTest extends OpMode {
 
     private TelemetryManager panelsTelemetry;
     private Follower         follower;
@@ -60,22 +60,14 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private static final double GATE_INTAKE_SEC = 2.0;
 
     // ── Waypoints ─────────────────────────────────────────────
-    private final Pose startPose       = new Pose(0,   0,    Math.toRadians(0));
-    private final Pose shootPose1      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose controlPose1    = new Pose(-21, 77,   Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(16,  74.5, Math.toRadians(0));
-    private final Pose shootPose2      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(22,  70.5, Math.toRadians(-40));
-    private final Pose shootPose3      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose shootPose4      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(16,  50,   Math.toRadians(0));
-    private final Pose shootPose5      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose parkPose        = new Pose(5,   50,   Math.toRadians(0));
+    private final Pose startShootPose = new Pose(0,   0,    Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(44, 27,   Math.toRadians(0));
+    private final Pose controlPose1    = new Pose(-2, 29,   Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(48,  0, Math.toRadians(0));
+    private final Pose parkPose        = new Pose(-2,   29,   Math.toRadians(0));
 
     // ── Path chains ───────────────────────────────────────────
-    private PathChain toShoot1, toIntake1, toShoot2;
-    private PathChain openGate1, toShoot3, openGate2, toShoot4;
-    private PathChain toIntake2, toShoot5, toPark;
+    private PathChain toIntakeCurve, toShootCurve, toIntakeLine, toShootLine, toPark;
 
     @Override
     public void init() {
@@ -98,7 +90,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
-        follower.setStartingPose(startPose);
+        follower.setStartingPose(startShootPose);
 
         launcher.closeLatch();
         launcher.setHoodPosition(HARDCODED_HOOD);
@@ -170,7 +162,6 @@ public class BlueAutoNearSidePathingTest extends OpMode {
         switch (pathState) {
 
             case 0:
-                follower.followPath(toShoot1);
                 prepareShooter();
                 setPathState(1);
                 break;
@@ -187,7 +178,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
                     intakeTransfer.setIntaking();
-                    follower.followPath(toIntake1, true);
+                    follower.followPath(toIntakeCurve, true);
                     setPathState(3);
                 }
                 break;
@@ -196,7 +187,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIdle();
                     prepareShooter();
-                    follower.followPath(toShoot2, true);
+                    follower.followPath(toShootCurve, true);
                     setPathState(4);
                 }
                 break;
@@ -212,103 +203,83 @@ public class BlueAutoNearSidePathingTest extends OpMode {
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
-                    follower.followPath(openGate1, true);
+                    intakeTransfer.setIntaking();
+                    follower.followPath(toIntakeLine, true);
                     setPathState(6);
                 }
                 break;
 
-            case 6: // Arrived at gate 1 — start intake and wait
-                if (!follower.isBusy()) {
-                    intakeTransfer.setIntaking();
+            case 6:
+                if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
+                    intakeTransfer.setIdle();
+                    prepareShooter();
+                    follower.followPath(toShootLine, true);
                     setPathState(7);
                 }
                 break;
 
-            case 7: // Dwell at gate 1 for 2 seconds intaking
-                if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIdle();
-                    prepareShooter();
-                    follower.followPath(toShoot3, true);
+            case 7:
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    startShootSequence();
                     setPathState(8);
                 }
                 break;
-
             case 8:
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
-                    startShootSequence();
+                if (shootSeqState == ShootSeqState.DONE) {
+                    shootSeqState = ShootSeqState.IDLE;
+                    stopShooter();
+                    intakeTransfer.setIntaking();
+                    follower.followPath(toIntakeLine, true);
                     setPathState(9);
                 }
                 break;
 
             case 9:
-                if (shootSeqState == ShootSeqState.DONE) {
-                    shootSeqState = ShootSeqState.IDLE;
-                    stopShooter();
-                    follower.followPath(openGate2, true);
+                if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
+                    intakeTransfer.setIdle();
+                    prepareShooter();
+                    follower.followPath(toShootLine, true);
                     setPathState(10);
                 }
                 break;
 
-            case 10: // Arrived at gate 2 — start intake and wait
-                if (!follower.isBusy()) {
-                    intakeTransfer.setIntaking();
+            case 10:
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    startShootSequence();
                     setPathState(11);
                 }
                 break;
-
-            case 11: // Dwell at gate 2 for 2 seconds intaking
-                if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIdle();
-                    prepareShooter();
-                    follower.followPath(toShoot4, true);
+            case 11:
+                if (shootSeqState == ShootSeqState.DONE) {
+                    shootSeqState = ShootSeqState.IDLE;
+                    stopShooter();
+                    intakeTransfer.setIntaking();
+                    follower.followPath(toIntakeLine, true);
                     setPathState(12);
                 }
                 break;
 
             case 12:
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
-                    startShootSequence();
+                if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
+                    intakeTransfer.setIdle();
+                    prepareShooter();
+                    follower.followPath(toShootLine, true);
                     setPathState(13);
                 }
                 break;
 
             case 13:
-                if (shootSeqState == ShootSeqState.DONE) {
-                    shootSeqState = ShootSeqState.IDLE;
-                    stopShooter();
-                    intakeTransfer.setIntaking();
-                    follower.followPath(toIntake2, true);
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    startShootSequence();
                     setPathState(14);
                 }
                 break;
 
             case 14:
-                if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIdle();
-                    prepareShooter();
-                    follower.followPath(toShoot5, true);
-                    setPathState(15);
-                }
-                break;
-
-            case 15:
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
-                    startShootSequence();
-                    setPathState(16);
-                }
-                break;
-
-            case 16:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
                     follower.followPath(toPark, true);
-                    setPathState(17);
-                }
-                break;
-
-            case 17:
-                if (!follower.isBusy()) {
                     setPathState(-1);
                 }
                 break;
@@ -430,54 +401,29 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     // ── Paths ─────────────────────────────────────────────────
 
     private void buildPaths() {
-        toShoot1 = follower.pathBuilder()
-                .addPath(new BezierLine(startPose, shootPose1))
-                .setLinearHeadingInterpolation(startPose.getHeading(), shootPose1.getHeading())
+        toIntakeCurve = follower.pathBuilder()
+                .addPath(new BezierCurve(startShootPose, controlPose1, postIntakePose1))
+                .setLinearHeadingInterpolation(startShootPose.getHeading(), postIntakePose1.getHeading())
                 .build();
 
-        toIntake1 = follower.pathBuilder()
-                .addPath(new BezierCurve(shootPose1, controlPose1, postIntakePose1))
-                .setLinearHeadingInterpolation(shootPose1.getHeading(), postIntakePose1.getHeading())
+        toShootCurve = follower.pathBuilder()
+                .addPath(new BezierCurve(postIntakePose1, controlPose1, startShootPose))
+                .setLinearHeadingInterpolation(postIntakePose1.getHeading(), startShootPose.getHeading())
                 .build();
 
-        toShoot2 = follower.pathBuilder()
-                .addPath(new BezierCurve(postIntakePose1, controlPose1, shootPose2))
-                .setLinearHeadingInterpolation(postIntakePose1.getHeading(), shootPose2.getHeading())
+        toIntakeLine = follower.pathBuilder()
+                .addPath(new BezierLine(startShootPose, postIntakePose2))
+                .setLinearHeadingInterpolation(startShootPose.getHeading(), postIntakePose2.getHeading())
                 .build();
 
-        openGate1 = follower.pathBuilder()
-                .addPath(new BezierCurve(shootPose2, controlPose1, gateOpener))
-                .setLinearHeadingInterpolation(shootPose2.getHeading(), gateOpener.getHeading())
-                .build();
-
-        toShoot3 = follower.pathBuilder()
-                .addPath(new BezierCurve(gateOpener, controlPose1, shootPose3))
-                .setLinearHeadingInterpolation(gateOpener.getHeading(), shootPose3.getHeading())
-                .build();
-
-        openGate2 = follower.pathBuilder()
-                .addPath(new BezierCurve(shootPose3, controlPose1, gateOpener))
-                .setLinearHeadingInterpolation(shootPose3.getHeading(), gateOpener.getHeading())
-                .build();
-
-        toShoot4 = follower.pathBuilder()
-                .addPath(new BezierCurve(gateOpener, controlPose1, shootPose4))
-                .setLinearHeadingInterpolation(gateOpener.getHeading(), shootPose4.getHeading())
-                .build();
-
-        toIntake2 = follower.pathBuilder()
-                .addPath(new BezierLine(shootPose4, postIntakePose2))
-                .setLinearHeadingInterpolation(shootPose4.getHeading(), postIntakePose2.getHeading())
-                .build();
-
-        toShoot5 = follower.pathBuilder()
-                .addPath(new BezierLine(postIntakePose2, shootPose5))
-                .setLinearHeadingInterpolation(postIntakePose2.getHeading(), shootPose5.getHeading())
+        toShootLine = follower.pathBuilder()
+                .addPath(new BezierLine(postIntakePose2, startShootPose))
+                .setLinearHeadingInterpolation(postIntakePose2.getHeading(), startShootPose.getHeading())
                 .build();
 
         toPark = follower.pathBuilder()
-                .addPath(new BezierLine(shootPose5, parkPose))
-                .setLinearHeadingInterpolation(shootPose5.getHeading(), parkPose.getHeading())
+                .addPath(new BezierLine(startShootPose, parkPose))
+                .setLinearHeadingInterpolation(startShootPose.getHeading(), parkPose.getHeading())
                 .build();
     }
 }

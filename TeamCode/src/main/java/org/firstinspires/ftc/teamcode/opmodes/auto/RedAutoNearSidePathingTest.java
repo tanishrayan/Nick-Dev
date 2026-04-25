@@ -23,9 +23,9 @@ import com.pedropathing.util.Timer;
 
 import java.util.List;
 
-@Autonomous(name = "BlueTesting", group = "Autonomous")
+@Autonomous(name = "RedTesting", group = "Autonomous")
 @Configurable
-public class BlueAutoNearSidePathingTest extends OpMode {
+public class RedAutoNearSidePathingTest extends OpMode {
 
     private TelemetryManager panelsTelemetry;
     private Follower         follower;
@@ -61,16 +61,16 @@ public class BlueAutoNearSidePathingTest extends OpMode {
 
     // ── Waypoints ─────────────────────────────────────────────
     private final Pose startPose       = new Pose(0,   0,    Math.toRadians(0));
-    private final Pose shootPose1      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose controlPose1    = new Pose(-21, 77,   Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(16,  74.5, Math.toRadians(0));
-    private final Pose shootPose2      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(22,  70.5, Math.toRadians(-40));
-    private final Pose shootPose3      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose shootPose4      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(16,  50,   Math.toRadians(0));
-    private final Pose shootPose5      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose parkPose        = new Pose(5,   50,   Math.toRadians(0));
+    private final Pose shootPose1      = new Pose(-22, -50,   Math.toRadians(0));
+    private final Pose controlPose1    = new Pose(-21, -77,   Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(16,  -74.5, Math.toRadians(0));
+    private final Pose shootPose2      = new Pose(-22, -50,   Math.toRadians(0));
+    private final Pose gateOpener      = new Pose(22,  -70.5, Math.toRadians(40));
+    private final Pose shootPose3      = new Pose(-22, -50,   Math.toRadians(0));
+    private final Pose shootPose4      = new Pose(-22, -50,   Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(16,  -50,   Math.toRadians(0));
+    private final Pose shootPose5      = new Pose(-22, -50,   Math.toRadians(0));
+    private final Pose parkPose        = new Pose(5,   -50,   Math.toRadians(0));
 
     // ── Path chains ───────────────────────────────────────────
     private PathChain toShoot1, toIntake1, toShoot2;
