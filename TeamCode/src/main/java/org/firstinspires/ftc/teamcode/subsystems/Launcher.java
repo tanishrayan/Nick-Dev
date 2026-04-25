@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.subsystems;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 
@@ -51,9 +52,9 @@ public class Launcher {
         bottomMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
         // Uncomment after tuning PIDF on new robot:
-        // PIDFCoefficients pidf = new PIDFCoefficients(kP, kI, kD, kF);
-        // topMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
-        // bottomMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
+        PIDFCoefficients pidf = new PIDFCoefficients(kP, kI, kD, kF);
+        topMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
+        bottomMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
 
         closeLatch();
     }
@@ -90,6 +91,7 @@ public class Launcher {
     // ── Hood ──────────────────────────────────────────────────
 
     public void setHoodPosition(double position) {
+        position = Math.max(0.269, Math.min(0.89, position));
         adjustableHood.setPosition(position);
     }
 
@@ -97,8 +99,8 @@ public class Launcher {
         return adjustableHood.getPosition();
     }
 
-    public void setHoodRetracted() { adjustableHood.setPosition(HOOD_RETRACTED); }
-    public void setHoodExtended()  { adjustableHood.setPosition(HOOD_EXTENDED); }
+    public void setHoodRetracted() { adjustableHood.setPosition(0.269); }
+    public void setHoodExtended()  { adjustableHood.setPosition(0.89); }
 
     // ── Latch ─────────────────────────────────────────────────
 
@@ -116,14 +118,15 @@ public class Launcher {
     }
 
     public double calculateHoodAngle(double distanceToGoal) {
-        // Piecewise linear — R² = 0.970
+        double position;
         if (distanceToGoal <= 67) {
-            return 1.0;
+            position = 0.89; // max down (close range)
         } else if (distanceToGoal > 80 && distanceToGoal <= 115) {
-            return 0.65;
+            position = 0.65;
         } else {
-            return -0.01119 * (distanceToGoal - 20) + 1.65;
+            position = -0.01119 * (distanceToGoal - 20) + 1.65;
         }
+        return Math.max(0.269, Math.min(0.89, position)); // always clamp
     }
 
     // ── Telemetry ─────────────────────────────────────────────

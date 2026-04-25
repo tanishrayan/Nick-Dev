@@ -18,8 +18,8 @@ public class Turret {
     private static final double TICKS_PER_TURRET_REV  = TICKS_PER_MOTOR_REV * GEAR_REDUCTION;
 
     // ── Soft limits — from physical hard stop testing ──────────
-    private static final double MAX_ANGLE          =  172.0;  // right hard stop with buffer
-    private static final double MIN_ANGLE          =  -85.0;  // left hard stop with buffer
+    private static final double MAX_ANGLE          =  230.0;  // right hard stop with buffer
+    private static final double MIN_ANGLE          =  -118.0;  // left hard stop with buffer
     private static final double DEADZONE_THRESHOLD =   10.0;
 
     // ── PID Coefficients ───────────────────────────────────────
