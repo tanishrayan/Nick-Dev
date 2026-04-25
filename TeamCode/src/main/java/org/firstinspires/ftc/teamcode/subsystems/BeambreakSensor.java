@@ -33,7 +33,12 @@ public class BeambreakSensor {
      */
     public boolean isBlocked() {
         if (!connected || channel == null) return false;
-        return !channel.getState(); // REV: false = blocked
+        try {
+            return !channel.getState();
+        } catch (Exception e) {
+            connected = false; // mark it dead so we stop trying
+            return false;
+        }
     }
 
     public boolean isConnected() { return connected; }
