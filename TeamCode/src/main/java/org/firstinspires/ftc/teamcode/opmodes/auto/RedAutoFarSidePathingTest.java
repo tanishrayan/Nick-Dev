@@ -23,7 +23,7 @@ import com.pedropathing.util.Timer;
 
 import java.util.List;
 
-@Autonomous(name = "BlueTesting", group = "Autonomous")
+@Autonomous(name = "RedFarTesting", group = "Autonomous")
 @Configurable
 public class RedAutoFarSidePathingTest extends OpMode {
 

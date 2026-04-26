@@ -19,7 +19,7 @@ public class Turret {
 
     // ── Soft limits — from physical hard stop testing ──────────
     private static final double MAX_ANGLE          =  230.0;  // right hard stop with buffer
-    private static final double MIN_ANGLE          =  -118.0;  // left hard stop with buffer
+    private static final double MIN_ANGLE          =  -178.0;  // left hard stop with buffer
     private static final double DEADZONE_THRESHOLD =   10.0;
 
     // ── PID Coefficients ───────────────────────────────────────
@@ -121,9 +121,8 @@ public class Turret {
     // ── Field aim ─────────────────────────────────────────────
 
     public void aimAtGoal(double robotX, double robotY, double robotHeading) {
-        double angleToGoal     = calculateAngleToGoal(robotX, robotY, robotHeading);
-        double correctedAngle  = normalizeAngle(angleToGoal + limelightCorrectionDeg);
-        if (isInDeadzone(correctedAngle)) return;
+        double angleToGoal    = calculateAngleToGoal(robotX, robotY, robotHeading);
+        double correctedAngle = normalizeAngle(angleToGoal + limelightCorrectionDeg);
         setTurretAngle(correctedAngle);
     }
 
@@ -137,7 +136,7 @@ public class Turret {
     // ── Goal math ─────────────────────────────────────────────
 
     public double calculateAngleToGoal(double robotX, double robotY, double robotHeading) {
-        double headingRad   = Math.toRadians(robotHeading);
+        double headingRad   = Math.toRadians(-robotHeading);
         double turretFieldX = robotX + (TURRET_OFFSET_X * Math.cos(headingRad))
                 - (TURRET_OFFSET_Y * Math.sin(headingRad));
         double turretFieldY = robotY + (TURRET_OFFSET_X * Math.sin(headingRad))
@@ -147,7 +146,7 @@ public class Turret {
         double deltaY           = goalY - turretFieldY;
         double fieldAngleToGoal = Math.toDegrees(Math.atan2(deltaY, deltaX));
 
-        return normalizeAngle(fieldAngleToGoal - robotHeading);
+        return normalizeAngle(fieldAngleToGoal + robotHeading);
     }
 
     public double calculateDistanceToGoal(double robotX, double robotY) {

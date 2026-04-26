@@ -23,7 +23,7 @@ import com.pedropathing.util.Timer;
 
 import java.util.List;
 
-@Autonomous(name = "BlueTesting", group = "Autonomous")
+@Autonomous(name = "BlueFarTesting", group = "Autonomous")
 @Configurable
 public class BlueAutoFarSidePathingTest extends OpMode {
 
@@ -39,8 +39,8 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     private Limelight3A       limelight;
 
     // ── Hardcoded shooter values ───────────────────────────────
-    private static final double HARDCODED_RPM  = 1600.0;
-    private static final double HARDCODED_HOOD = 0.6;
+    private static final double HARDCODED_RPM  = 2200.0;
+    private static final double HARDCODED_HOOD = 0.3;
 
     // ── Limelight constants ────────────────────────────────────
     private static final double kP_LIMELIGHT  = 0.015;
@@ -86,7 +86,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         limelight.pipelineSwitch(0);
         limelight.start();
 
-        turret.setGoalPosition(32, -15);
+        turret.setGoalPosition(60, -140);
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();

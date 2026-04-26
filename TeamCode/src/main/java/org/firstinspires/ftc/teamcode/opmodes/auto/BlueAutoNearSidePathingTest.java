@@ -23,7 +23,7 @@ import com.pedropathing.util.Timer;
 
 import java.util.List;
 
-@Autonomous(name = "BlueTesting", group = "Autonomous")
+@Autonomous(name = "BlueNearTesting", group = "Autonomous")
 @Configurable
 public class BlueAutoNearSidePathingTest extends OpMode {
 
@@ -65,7 +65,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private final Pose controlPose1    = new Pose(-21, 77,   Math.toRadians(0));
     private final Pose postIntakePose1 = new Pose(16,  74.5, Math.toRadians(0));
     private final Pose shootPose2      = new Pose(-22, 50,   Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(22,  70.5, Math.toRadians(-40));
+    private final Pose gateOpener      = new Pose(20.5,  71.5, Math.toRadians(-55));
     private final Pose shootPose3      = new Pose(-22, 50,   Math.toRadians(0));
     private final Pose shootPose4      = new Pose(-22, 50,   Math.toRadians(0));
     private final Pose postIntakePose2 = new Pose(16,  50,   Math.toRadians(0));
