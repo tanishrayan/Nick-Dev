@@ -19,13 +19,13 @@ public class Launcher {
     private static final double BOTTOM_MULTIPLIER = -1.0;
 
     // ── Flywheel PIDF (tune on new robot) ─────────────────────
-    private static final double kP = 160.0;
+    private static final double kP = 150.0;
     private static final double kI = 0.0;
     private static final double kD = 0.0;
-    private static final double kF = 15.8;
+    private static final double kF = 13.2;
 
     // ── Hood positions (tune on new robot) ────────────────────
-    private static final double LATCH_CLOSED   = 0.919;
+    private static final double LATCH_CLOSED   = 0.843;
     private static final double LATCH_OPEN     = 0.6;
     private static final double HOOD_RETRACTED = 1.0;
     private static final double HOOD_EXTENDED  = 0.32;
@@ -112,21 +112,27 @@ public class Launcher {
     // ── Distance-based calculations ───────────────────────────
 
     public double calculateFlywheelVelocity(double distanceToGoal) {
-        // Quadratic regression — R² = 0.991
-        double d = distanceToGoal - 20;
-        return 0.05 * d * d + (-0.3669) * d + 1450.0528;
+        double d = distanceToGoal;
+        return 0.1028 * d * d - 10.40 * d + 1691.3;
     }
 
     public double calculateHoodAngle(double distanceToGoal) {
         double position;
-        if (distanceToGoal <= 67) {
-            position = 0.89; // max down (close range)
-        } else if (distanceToGoal > 80 && distanceToGoal <= 115) {
-            position = 0.65;
+        if (distanceToGoal <= 85) {
+            position = 0.669;
+        } else if (distanceToGoal <= 102) {
+            double t = (distanceToGoal - 85) / (102 - 85);
+            position = 0.669 + t * (0.569 - 0.669);
+        } else if (distanceToGoal <= 119) {
+            double t = (distanceToGoal - 102) / (119 - 102);
+            position = 0.569 + t * (0.32 - 0.569);
+        } else if (distanceToGoal <= 140) {
+            double t = (distanceToGoal - 119) / (140 - 119);
+            position = 0.32 + t * (0.280 - 0.32);
         } else {
-            position = -0.01119 * (distanceToGoal - 20) + 1.65;
+            position = 0.280;
         }
-        return Math.max(0.269, Math.min(0.89, position)); // always clamp
+        return Math.max(0.269, Math.min(0.89, position));
     }
 
     // ── Telemetry ─────────────────────────────────────────────

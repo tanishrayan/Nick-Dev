@@ -38,9 +38,6 @@ public class BlueSideTele extends OpMode {
     private static final double MOUNTING_OFFSET_DEG = -1.0;
     private static final int    TARGET_TAG_ID       = 20;
 
-    // ── Switch threshold — within this many degrees, limelight takes over ──
-    private static final double LL_HANDOFF_DEG = 15.0;
-
     // ── Limelight state ────────────────────────────────────────
     private boolean tagWasVisible = false;
 
@@ -160,11 +157,38 @@ public class BlueSideTele extends OpMode {
                 if (Math.abs(tx) > DEADBAND_DEG) {
                     turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
                 } else {
+                    // Locked — correct encoder drift from belt skip
                     turret.setMotorPowerDirectly(0);
+                    double trueAngle = turret.calculateAngleToGoal(robotX, robotY, robotHeading);
+                    turret.correctEncoderFromLimelight(trueAngle);
                 }
             }
+
+        } else {
+            // ── Manual dpad ───────────────────────────────────
+            if (gamepad2.dpad_left && !dpadLeftPressed)
+                turret.setTurretAngle(turret.getCurrentAngle() - TURRET_INCREMENT);
+            dpadLeftPressed = gamepad2.dpad_left;
+
+            if (gamepad2.dpad_right && !dpadRightPressed)
+                turret.setTurretAngle(turret.getCurrentAngle() + TURRET_INCREMENT);
+            dpadRightPressed = gamepad2.dpad_right;
+
+            turret.update();
         }
-        //circleWasPressed = circleNow;
+
+        // ── Flywheel toggle (gamepad2 circle) ─────────────────
+        boolean circleNow = gamepad2.circle;
+        if (circleNow && !circleWasPressed) {
+            if (!shooterRunning) {
+                launcher.setFlywheelVelocity(currentVelocity);
+                shooterRunning = true;
+            } else {
+                launcher.stopFlywheel();
+                shooterRunning = false;
+            }
+        }
+        circleWasPressed = circleNow;
 
         // ── Intake toggle (gamepad1 right trigger) ─────────────
         boolean rightTriggerNow = gamepad1.right_trigger > 0.5;

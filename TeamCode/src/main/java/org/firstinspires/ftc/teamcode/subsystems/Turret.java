@@ -159,6 +159,16 @@ public class Turret {
     private double ticksToAngle(int ticks) {
         return -(ticks / TICKS_PER_TURRET_REV) * 360.0;
     }
+    public void correctEncoderFromLimelight(double trueAngleDegrees) {
+        // Called when limelight confirms turret is locked on goal
+        // Resets encoder to match the known true angle
+        int correctTicks = (int) angleToTicks(trueAngleDegrees);
+        // We can't reset to arbitrary value easily, so we just update target
+        // and force the internal state to match
+        targetAngleDegrees = trueAngleDegrees;
+        lastError = 0;
+        integralSum = 0;
+    }
 
     // ── Getters ───────────────────────────────────────────────
     public double  getCurrentAngle() { return ticksToAngle(turretMotor.getCurrentPosition()); }
