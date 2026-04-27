@@ -9,101 +9,114 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 @TeleOp(name = "TestTurretMotor", group = "testing")
 public class TestTurretMotor extends LinearOpMode {
 
-    static final double TICKS_PER_MOTOR_REV  = 28.0;
-    static final double GEAR_REDUCTION       = (50.0/20.0) * (74.0/20.0) * (120.0/25.0);
-    static final double TICKS_PER_TURRET_REV = TICKS_PER_MOTOR_REV * GEAR_REDUCTION;
+    static double TICKS_PER_TURRET_REV = 1103.0;
+
+    double kP          = 0.008;
+    double minPowFar   = 0.14;
+    double minPowClose = 0.09;
+    double maxPow      = 0.7;
+    int    deadband    = 15;
 
     DcMotorEx turretMotor;
 
     @Override
     public void runOpMode() {
         turretMotor = hardwareMap.get(DcMotorEx.class, "turret");
-        turretMotor.setDirection(DcMotorSimple.Direction.FORWARD);
+        turretMotor.setDirection(DcMotorSimple.Direction.REVERSE);
         turretMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        telemetry.addLine("Point turret straight forward then press START");
+        telemetry.addLine("Point turret FORWARD then START");
         telemetry.update();
         waitForStart();
 
-        // ── Step size options ──────────────────────────────────
-        int[] stepSizes = {1, 5, 10, 50, 100};
-        int stepIndex   = 2; // start at 10 ticks
-
-        // ── Target tick tracking ───────────────────────────────
         int targetTicks = 0;
+        int selected    = 0; // 0=kP 1=minFar 2=minClose 3=maxPow 4=ticksPerRev
 
-        // ── Edge detection ─────────────────────────────────────
-        boolean dpadUpLast    = false;
-        boolean dpadDownLast  = false;
-        boolean dpadLeftLast  = false;
-        boolean dpadRightLast = false;
-        boolean aLast         = false;
-        boolean yLast         = false;
+        boolean aLast  = false, bLast  = false, xLast  = false;
+        boolean rbLast = false, lbLast = false;
+        boolean dULast = false, dDLast = false;
 
         while (opModeIsActive()) {
 
-            // ── A = reset encoder to 0 (mark this as front) ───
+            // A = forward, B = +90, X = -90
             boolean aNow = gamepad1.a;
-            if (aNow && !aLast) {
+            boolean bNow = gamepad1.b;
+            boolean xNow = gamepad1.x;
+            if (aNow && !aLast) targetTicks = 0;
+            if (bNow && !bLast) targetTicks =  (int)(TICKS_PER_TURRET_REV * 0.25);
+            if (xNow && !xLast) targetTicks = -(int)(TICKS_PER_TURRET_REV * 0.25);
+            aLast = aNow; bLast = bNow; xLast = xNow;
+
+            // Y = zero encoder
+            if (gamepad1.y) {
                 turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
                 turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
                 targetTicks = 0;
             }
-            aLast = aNow;
 
-            // ── Y = cycle step size ────────────────────────────
-            boolean yNow = gamepad1.y;
-            if (yNow && !yLast) {
-                stepIndex = (stepIndex + 1) % stepSizes.length;
+            // RB/LB = cycle selected variable
+            boolean rbNow = gamepad1.right_bumper;
+            boolean lbNow = gamepad1.left_bumper;
+            if (rbNow && !rbLast) selected = (selected + 1) % 5;
+            if (lbNow && !lbLast) selected = (selected + 4) % 5;
+            rbLast = rbNow; lbLast = lbNow;
+
+            // Dpad up/down = adjust selected
+            boolean dUNow = gamepad1.dpad_up;
+            boolean dDNow = gamepad1.dpad_down;
+            if (dUNow && !dULast) {
+                if      (selected == 0) kP          += 0.001;
+                else if (selected == 1) minPowFar   += 0.005;
+                else if (selected == 2) minPowClose += 0.005;
+                else if (selected == 3) maxPow       = Math.min(1.0, maxPow + 0.05);
+                else if (selected == 4) TICKS_PER_TURRET_REV += 5;
             }
-            yLast = yNow;
-
-            int step = stepSizes[stepIndex];
-
-            // ── Dpad right = move right (positive ticks) ───────
-            boolean dRightNow = gamepad1.dpad_right;
-            if (dRightNow && !dpadRightLast) {
-                targetTicks += step;
+            if (dDNow && !dDLast) {
+                if      (selected == 0) kP          = Math.max(0, kP - 0.001);
+                else if (selected == 1) minPowFar   = Math.max(0, minPowFar - 0.005);
+                else if (selected == 2) minPowClose = Math.max(0, minPowClose - 0.005);
+                else if (selected == 3) maxPow      = Math.max(0, maxPow - 0.05);
+                else if (selected == 4) TICKS_PER_TURRET_REV = Math.max(100, TICKS_PER_TURRET_REV - 5);
             }
-            dpadRightLast = dRightNow;
+            dULast = dUNow; dDLast = dDNow;
 
-            // ── Dpad left = move left (negative ticks) ─────────
-            boolean dLeftNow = gamepad1.dpad_left;
-            if (dLeftNow && !dpadLeftLast) {
-                targetTicks -= step;
-            }
-            dpadLeftLast = dLeftNow;
-
-            // ── Drive to target with simple P ─────────────────
+            // PID
             int    currentTicks = turretMotor.getCurrentPosition();
             double error        = targetTicks - currentTicks;
-            double power        = error * 0.003;
-            power = Math.max(-0.5, Math.min(0.5, power));
-            if (Math.abs(error) < 5) power = 0;
+            double power        = kP * error;
+            power = Math.max(-maxPow, Math.min(maxPow, power));
+
+            if (Math.abs(error) > deadband) {
+                double minPow = Math.abs(error) > 100 ? minPowFar : minPowClose;
+                if (power > 0 && power < minPow)  power =  minPow;
+                if (power < 0 && power > -minPow) power = -minPow;
+            } else {
+                power = 0;
+            }
+
             turretMotor.setPower(power);
 
-            // ── Calculated angle based on current gear ratio ───
-            double calculatedDegrees = (currentTicks / TICKS_PER_TURRET_REV) * 360.0;
+            double currentDeg = (currentTicks / TICKS_PER_TURRET_REV) * 360.0;
+            double targetDeg  = (targetTicks  / TICKS_PER_TURRET_REV) * 360.0;
 
-            // ── Telemetry ──────────────────────────────────────
-            telemetry.addLine("=== TURRET TICK FINDER ===");
-            telemetry.addData("Step Size",         "%d ticks  (Y to change)", step);
+            String[] names = {"kP", "minPowFar", "minPowClose", "maxPow", "ticksPerRev"};
+            telemetry.addLine("=== TURRET TUNER ===");
+            telemetry.addData(">> Editing", names[selected] + "  (RB/LB switch, DPAD U/D change)");
             telemetry.addLine();
-            telemetry.addData("Target Ticks",      targetTicks);
-            telemetry.addData("Current Ticks",     currentTicks);
-            telemetry.addData("Calculated Angle",  "%.1f°", calculatedDegrees);
+            telemetry.addData(selected==0?">> kP"         :"   kP",          "%.4f", kP);
+            telemetry.addData(selected==1?">> minPowFar"  :"   minPowFar",   "%.3f", minPowFar);
+            telemetry.addData(selected==2?">> minPowClose":"   minPowClose",  "%.3f", minPowClose);
+            telemetry.addData(selected==3?">> maxPow"     :"   maxPow",      "%.2f", maxPow);
+            telemetry.addData(selected==4?">> ticksPerRev":"   ticksPerRev", "%.0f", TICKS_PER_TURRET_REV);
             telemetry.addLine();
-            telemetry.addLine("=== RECORD THESE ===");
-            telemetry.addLine("Move to TRUE 90° RIGHT, note Current Ticks");
-            telemetry.addLine("Move to TRUE 90° LEFT,  note Current Ticks");
+            telemetry.addData("Target",  "%.1f°  (%d ticks)", targetDeg, targetTicks);
+            telemetry.addData("Current", "%.1f°  (%d ticks)", currentDeg, currentTicks);
+            telemetry.addData("Error",   "%.0f ticks", error);
+            telemetry.addData("Power",   "%.3f", power);
             telemetry.addLine();
-            telemetry.addData("Ticks for 90° (calc)", "%.0f", TICKS_PER_TURRET_REV * 0.25);
-            telemetry.addData("Ticks/Rev (calc)",     "%.1f", TICKS_PER_TURRET_REV);
-            telemetry.addLine();
-            telemetry.addLine("CONTROLS:");
-            telemetry.addLine("Dpad R/L = move  Y = step size  A = zero here");
+            telemetry.addLine("A=0°  B=+90°  X=-90°  Y=zero encoder");
             telemetry.update();
         }
 

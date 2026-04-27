@@ -73,7 +73,7 @@ public class BlueFarSideAuto extends OpMode {
         turret         = new Turret(hardwareMap);
 
         turret.setGoalPosition(32, -15);
-        turret.computeAndSetFieldAngleToGoal(startPose.getX(), startPose.getY());
+        //turret.computeAndSetFieldAngleToGoal(startPose.getX(), startPose.getY());
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
