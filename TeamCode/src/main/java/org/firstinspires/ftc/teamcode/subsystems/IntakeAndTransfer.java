@@ -17,7 +17,7 @@ public class IntakeAndTransfer {
     private BeambreakSensor beamMid;
     private BeambreakSensor beamFront;
 
-    private static final double PIVOT_RETRACTED = 0.44;
+    private static final double PIVOT_RETRACTED = 0.22;
     private static final double PIVOT_DEPLOYED  = 0.125;
     private static final double PIVOT_FLOOR     = 0.05;
 

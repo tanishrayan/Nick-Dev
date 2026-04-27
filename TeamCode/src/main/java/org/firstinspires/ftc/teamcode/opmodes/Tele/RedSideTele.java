@@ -253,7 +253,7 @@ public class RedSideTele extends OpMode {
         telemetry.addLine();
         telemetry.addLine("=== TURRET ===");
         if (autoAimEnabled) {
-            turret.updateAutoAimTelemetry(robotX, robotY, robotHeading);
+            //turret.updateAutoAimTelemetry(robotX, robotY, robotHeading);
         } else {
             turret.updateTelemetry();
             telemetry.addData("Manual Aim", "Use DPAD L/R");

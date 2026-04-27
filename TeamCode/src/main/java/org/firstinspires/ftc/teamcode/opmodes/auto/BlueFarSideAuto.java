@@ -20,42 +20,42 @@ import com.pedropathing.util.Timer;
 @Autonomous(name = "Blue Far Side Pedro Pathing Autonomous", group = "Autonomous")
 @Configurable
 public class BlueFarSideAuto extends OpMode {
+
     private TelemetryManager panelsTelemetry;
-    private Follower follower;
-    private Timer pathTimer, opmodeTimer;
-    private int pathState;
-    private static final double HARDCODED_RPM = 2200.0;      // Set your RPM here
+    private Follower         follower;
+    private Timer            pathTimer, opmodeTimer;
+    private int              pathState;
+
+    private static final double HARDCODED_RPM  = 2200.0;
     private static final double HARDCODED_HOOD = 0.6;
-    private static final double HARDCODED_TURRET = 0.53;
 
-    private Drivetrain drivetrain;
+    private Drivetrain        drivetrain;
     private IntakeAndTransfer intakeTransfer;
-    private Launcher launcher;
-    private Turret turret;
+    private Launcher          launcher;
+    private Turret            turret;
 
-    // Timing constants
     private static final double FLYWHEEL_SPINUP_TIME = 0.5;
-    private static final double TRANSFER_TIME = 1.8;
+    private static final double TRANSFER_TIME        = 1.8;
 
-    // Define waypoints
-    private final Pose startPose = new Pose(0, 0, Math.toRadians(0));
-    private final Pose leavePose = new Pose(20, 0, Math.toRadians(0));
-    private final Pose preIntakePose1 = new Pose(-35, 71.5, Math.toRadians(0));
-    private final Pose intakePose1 = new Pose(21.5, 71.5, Math.toRadians(0));
-    private final Pose shootPose2 = new Pose(-22, 53, Math.toRadians(0));
-    private final Pose preGateOpener = new Pose(-22, 65, Math.toRadians(0));
-    private final Pose gateOpener = new Pose(18, 67, Math.toRadians(-40));
-    private final Pose gateBackOff = new Pose(10, 74, Math.toRadians(0));
-    private final Pose gateComeIn = new Pose(24, 74, Math.toRadians(0));
-    private final Pose strafeLeft = new Pose(24, 82, Math.toRadians(0));
-    private final Pose shootPose3 = new Pose(-22, 53, Math.toRadians(0));
-    private final Pose preIntakePose2 = new Pose(-28, 47, Math.toRadians(0));
-    private final Pose intakePose2 = new Pose(15, 47, Math.toRadians(0));
-    private final Pose shootPose4 = new Pose(-22 , 53, Math.toRadians(0));
-    private final Pose parkPose = new Pose(5, 53, Math.toRadians(0));
+    // ── Waypoints ─────────────────────────────────────────────
+    private final Pose startPose      = new Pose(0,    0,    Math.toRadians(0));
+    private final Pose leavePose      = new Pose(20,   0,    Math.toRadians(0));
+    private final Pose preIntakePose1 = new Pose(-35,  71.5, Math.toRadians(0));
+    private final Pose intakePose1    = new Pose(21.5, 71.5, Math.toRadians(0));
+    private final Pose shootPose2     = new Pose(-22,  53,   Math.toRadians(0));
+    private final Pose preGateOpener  = new Pose(-22,  65,   Math.toRadians(0));
+    private final Pose gateOpener     = new Pose(18,   67,   Math.toRadians(-40));
+    private final Pose gateBackOff    = new Pose(10,   74,   Math.toRadians(0));
+    private final Pose gateComeIn     = new Pose(24,   74,   Math.toRadians(0));
+    private final Pose strafeLeft     = new Pose(24,   82,   Math.toRadians(0));
+    private final Pose shootPose3     = new Pose(-22,  53,   Math.toRadians(0));
+    private final Pose preIntakePose2 = new Pose(-28,  47,   Math.toRadians(0));
+    private final Pose intakePose2    = new Pose(15,   47,   Math.toRadians(0));
+    private final Pose shootPose4     = new Pose(-22,  53,   Math.toRadians(0));
+    private final Pose parkPose       = new Pose(5,    53,   Math.toRadians(0));
 
-    // Path chains
-    private PathChain leaveZone, toPreIntake1, toIntake1, toShoot2;
+    // ── Path chains ───────────────────────────────────────────
+    private PathChain leaveZone, toIntake1, toShoot2;
     private PathChain gate0, gate1, gate2, gate3, gate4, toShoot3;
     private PathChain toPreIntake2, toIntake2, toShoot4, toPark;
 
@@ -63,24 +63,25 @@ public class BlueFarSideAuto extends OpMode {
     public void init() {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
-        // Initialize timers
-        pathTimer = new Timer();
+        pathTimer   = new Timer();
         opmodeTimer = new Timer();
         opmodeTimer.resetTimer();
 
-        // Initialize subsystems
-        drivetrain = new Drivetrain(hardwareMap);
+        drivetrain     = new Drivetrain(hardwareMap);
         intakeTransfer = new IntakeAndTransfer(hardwareMap);
-        launcher = new Launcher(hardwareMap);
-        turret = new Turret(hardwareMap);
+        launcher       = new Launcher(hardwareMap);
+        turret         = new Turret(hardwareMap);
 
-        // Set goal position (basket coordinates)
         turret.setGoalPosition(32, -15);
+        turret.computeAndSetFieldAngleToGoal(startPose.getX(), startPose.getY());
 
-        // Create follower and build paths
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
         follower.setStartingPose(startPose);
+
+        launcher.closeLatch();
+        launcher.setHoodPosition(HARDCODED_HOOD);
+        intakeTransfer.setIdle();
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -95,35 +96,79 @@ public class BlueFarSideAuto extends OpMode {
     @Override
     public void loop() {
         follower.update();
+        turret.update();
         autonomousPathUpdate();
 
-        // Telemetry
-        panelsTelemetry.debug("Path State", pathState);
-        panelsTelemetry.debug("X", follower.getPose().getX());
-        panelsTelemetry.debug("Y", follower.getPose().getY());
+        panelsTelemetry.debug("Path State",    pathState);
+        panelsTelemetry.debug("X",             follower.getPose().getX());
+        panelsTelemetry.debug("Y",             follower.getPose().getY());
         panelsTelemetry.debug("Heading (deg)", Math.toDegrees(follower.getPose().getHeading()));
-        panelsTelemetry.debug("Is Busy", follower.isBusy());
+        panelsTelemetry.debug("Is Busy",       follower.isBusy());
         panelsTelemetry.update(telemetry);
-
-        telemetry.addData("path state", pathState);
-        telemetry.addData("x", follower.getPose().getX());
-        telemetry.addData("y", follower.getPose().getY());
-        telemetry.addData("heading", Math.toDegrees(follower.getPose().getHeading()));
-        telemetry.update();
     }
 
     @Override
     public void stop() {
-        // Save final pose for TeleOp
-        SharedData.lastKnownPose = follower.getPose();
-        SharedData.hasAutonomousRun = true;
+        launcher.stopFlywheel();
+        launcher.closeLatch();
+        intakeTransfer.setIdle();
 
-        telemetry.addData("Final Pose Saved", "X=%.1f Y=%.1f H=%.1f",
-                follower.getPose().getX(),
-                follower.getPose().getY(),
-                Math.toDegrees(follower.getPose().getHeading()));
-        telemetry.update();
+        SharedData.lastKnownPose    = follower.getPose();
+        SharedData.hasAutonomousRun = true;
     }
+
+    private void autonomousPathUpdate() {
+        switch (pathState) {
+
+            case 0: // Spin up and aim at start
+                prepareShooter();
+                setPathState(1);
+                break;
+
+            case 1: // Wait for spinup, then shoot
+                aimTurret();
+                if (pathTimer.getElapsedTimeSeconds() >= FLYWHEEL_SPINUP_TIME) {
+                    setPathState(2);
+                }
+                break;
+
+            case 2: // Wait for transfer, then leave
+                aimTurret();
+                if (pathTimer.getElapsedTimeSeconds() >= TRANSFER_TIME) {
+                    stopShooter();
+                    follower.followPath(leaveZone, true);
+                    setPathState(3);
+                }
+                break;
+
+            case 3: // Wait to finish leaving
+                if (!follower.isBusy()) {
+                    setPathState(-1);
+                }
+                break;
+        }
+    }
+
+    private void prepareShooter() {
+        launcher.setFlywheelVelocity(HARDCODED_RPM);
+        launcher.setHoodPosition(HARDCODED_HOOD);
+        aimTurret();
+    }
+
+    private void aimTurret() {
+        Pose p = follower.getPose();
+        turret.aimAtGoal(p.getX(), p.getY(), Math.toDegrees(p.getHeading()));
+    }
+
+    private void stopShooter() {
+        launcher.stopFlywheel();
+    }
+
+    private void setPathState(int pState) {
+        pathState = pState;
+        pathTimer.resetTimer();
+    }
+
     private void buildPaths() {
         leaveZone = follower.pathBuilder()
                 .addPath(new BezierLine(startPose, leavePose))
@@ -149,8 +194,6 @@ public class BlueFarSideAuto extends OpMode {
                 .addPath(new BezierLine(preGateOpener, gateOpener))
                 .setLinearHeadingInterpolation(preGateOpener.getHeading(), gateOpener.getHeading())
                 .build();
-
-        //shootPose2, gateOpener, gateBackOff, gateComeIn, ShootPose3
 
         gate2 = follower.pathBuilder()
                 .addPath(new BezierLine(gateOpener, gateBackOff))
@@ -189,114 +232,7 @@ public class BlueFarSideAuto extends OpMode {
 
         toPark = follower.pathBuilder()
                 .addPath(new BezierLine(shootPose3, parkPose))
-                .setLinearHeadingInterpolation(shootPose4.getHeading(), parkPose.getHeading())
+                .setLinearHeadingInterpolation(shootPose3.getHeading(), parkPose.getHeading())
                 .build();
-    }
-
-    //private PathChain toShoot1, toPreIntake1, toIntake1, toShoot2;
-    //    private PathChain gate1, gate2, gate3, toShoot3;
-    //    private PathChain toPreIntake2, toIntake2, toShoot4, toPark;
-    private void autonomousPathUpdate() {
-        switch (pathState) {
-            // ===== CYCLE 1: PRELOAD SHOOTING =====
-            case 0:
-                SharedData.lastKnownPose = follower.getPose();
-                SharedData.hasAutonomousRun = true;
-                // Prepare shooter at shooting position
-                if (!follower.isBusy()) {
-                    prepareShooter();
-                    setPathState(1);
-                }
-                break;
-
-            case 1:
-                // Wait for flywheel spinup, then shoot
-                if (pathTimer.getElapsedTimeSeconds() >= FLYWHEEL_SPINUP_TIME) {
-                    //intakeTransfer.setTransfer();
-                    setPathState(2);
-                } else {
-                    // Keep updating aim during spinup
-                    updateAim();
-                }
-                break;
-
-            case 2:
-                // Wait for transfer to complete, then move to intake
-                if (pathTimer.getElapsedTimeSeconds() >= TRANSFER_TIME) {
-                    stopShooter();
-                    follower.followPath(leaveZone, true);
-                    setPathState(3);
-                }
-                break;
-
-            // ===== CYCLE 2: FIRST SAMPLE =====
-            case 3:
-                SharedData.lastKnownPose = follower.getPose();
-                SharedData.hasAutonomousRun = true;
-                // Wait for parking to complete
-                if (!follower.isBusy()) {
-                    setPathState(-1);  // Done
-                }
-                break;
-        }
-    }
-
-    // ===== HELPER METHODS =====
-
-    /**
-     * Prepare shooter systems with calculated parameters
-     */
-    private void prepareShooter() {
-        Pose currentPose = follower.getPose();
-        double robotX = currentPose.getX();
-        double robotY = currentPose.getY();
-        double robotHeading = Math.toDegrees(currentPose.getHeading());
-
-        double distance = turret.calculateDistanceToGoal(robotX, robotY);
-        double targetVelocity = launcher.calculateFlywheelVelocity(distance);
-        double targetHood = launcher.calculateHoodAngle(distance);
-        double angleToGoal = turret.calculateAngleToGoal(robotX, robotY, robotHeading);
-
-        launcher.setFlywheelVelocity(HARDCODED_RPM);
-        launcher.setHoodPosition(HARDCODED_HOOD);
-        //turret.setRawServoPosition(HARDCODED_TURRET);
-
-        // DEBUG: Check deadzone status
-        telemetry.addData("Goal Position", "(%.1f, %.1f)", 32.0, 50.0);
-        telemetry.addData("Robot X", "%.1f", robotX);
-        telemetry.addData("Robot Y", "%.1f", robotY);
-        telemetry.addData("Robot Heading", "%.1f°", robotHeading);
-        telemetry.addData("Calculated Turret Angle", "%.1f°", angleToGoal);
-        telemetry.addData("Actual Turret Angle", "%.1f°", turret.getCurrentAngle());
-        //telemetry.addData("Turret Servo Pos", "%.3f", turret.getCurrentPosition());
-        telemetry.addData("In Deadzone?", turret.isInDeadzone(angleToGoal) ? "YES" : "NO");
-        telemetry.update();
-    }
-
-    /**
-     * Update turret aim (for continuous tracking during spinup)
-     */
-    private void updateAim() {
-        Pose currentPose = follower.getPose();
-        double robotX = currentPose.getX();
-        double robotY = currentPose.getY();
-        double robotHeading = Math.toDegrees(currentPose.getHeading());
-        //turret.setRawServoPosition(HARDCODED_TURRET);
-    }
-
-    /**
-     * Stop all shooter systems
-     */
-    private void stopShooter() {
-        //intakeTransfer.setStatic();
-        launcher.stopFlywheel();
-    }
-
-    /**
-     * Set path state and reset timer
-     */
-    private void setPathState(int pState) {
-        pathState = pState;
-        pathTimer.resetTimer();
     }
 }

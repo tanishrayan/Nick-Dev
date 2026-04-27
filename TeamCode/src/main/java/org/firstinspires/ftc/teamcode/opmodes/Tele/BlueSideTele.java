@@ -28,14 +28,32 @@ public class BlueSideTele extends OpMode {
     private Limelight3A       limelight;
 
     // ── Field coordinates (0,0 = field center) ────────────────
-    private static final double GOAL_X = 72.0;
+    private static final double GOAL_X = 72.0;  // TODO: measure actual blue goal
     private static final double GOAL_Y = -72.0;
 
-    // ── Limelight distance constants (still used for distance calc) ──
+    // ── Limelight constants ────────────────────────────────────
+    private static final double kP_LIMELIGHT          = 0.01;
+    private static final double LL_MAX_SPEED          = 0.5;
+    private static final double DEADBAND_DEG          = 1;
+    private static final int    TARGET_TAG_ID         = 20;
+    private static final double TAG_LOST_HOLD_SECONDS = 0.05;
+
+    // ── Limelight distance constants ───────────────────────────
     private static final double CAMERA_HEIGHT_INCHES   = 13.3125;
     private static final double TARGET_HEIGHT_INCHES   = 29.0;
     private static final double CAMERA_MOUNT_ANGLE_DEG = 15.0;
-    private static final int    TARGET_TAG_ID          = 20;
+
+    // ── Heading compensation ───────────────────────────────────
+    private static final double HEADING_COMPENSATION = 0.002;
+    private static final double MAX_ANGULAR_VELOCITY = 10.0;
+
+    // ── Limelight runtime state ────────────────────────────────
+    private double      lastTurretPower       = 0.0;
+    private boolean     limelightJustTookOver = false;
+    private boolean     tagWasVisible         = false;
+    private ElapsedTime tagLostTimer          = new ElapsedTime();
+    private double      lastHeading           = 0.0;
+    private double      angularVelocity       = 0.0;
 
     // ── Shooter state ──────────────────────────────────────────
     private double currentVelocity     = 1000.0;
@@ -49,19 +67,7 @@ public class BlueSideTele extends OpMode {
     private enum ShootState { IDLE, SPINUP, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH }
     private ShootState  shootState = ShootState.IDLE;
     private ElapsedTime shootTimer = new ElapsedTime();
-    private static final double BALL_CLEAR_WAIT_SEC  = 0.5;  // time after beam clear before closing
-    private static final double CLOSE_LATCH_WAIT_SEC = 0.35; // recovery time between balls
-
-    // ── Third ball confirmation ────────────────────────────────
-    private boolean     fullLoadPending = false;
-    private ElapsedTime fullLoadTimer   = new ElapsedTime();
-    private static final double FULL_LOAD_CONFIRM_SEC = 1.0;
-
-    // ── Dip button (gamepad1 triangle) ────────────────────────
-    private boolean     dipping  = false;
-    private ElapsedTime dipTimer = new ElapsedTime();
-    private static final double DIP_DOWN_SEC  = 0.35;
-    private static final double DIP_TOTAL_SEC = 0.65;
+    private static final double BALL_CLEAR_WAIT_SEC = 0.5;
 
     // ── Turret manual ─────────────────────────────────────────
     private static final double TURRET_INCREMENT = 5.0;
@@ -70,10 +76,10 @@ public class BlueSideTele extends OpMode {
     private boolean optionsWasPressed      = false;
     private boolean circleWasPressed       = false;
     private boolean rightTriggerWasPressed = false;
-    private boolean triangleWasPressed     = false;
     private boolean dpadLeftPressed        = false;
     private boolean dpadRightPressed       = false;
 
+    // ── Init ───────────────────────────────────────────────────
     @Override
     public void init() {
         drivetrain     = new Drivetrain(hardwareMap);
@@ -99,43 +105,54 @@ public class BlueSideTele extends OpMode {
         launcher.setHoodRetracted();
         launcher.closeLatch();
 
+        lastHeading = drivetrain.getHeading();
+
         telemetry.addLine("Ready.");
         telemetry.update();
     }
 
+    // ── Main loop ──────────────────────────────────────────────
     @Override
     public void loop() {
 
+        // ── Drivetrain ────────────────────────────────────────
         drivetrain.handleDrivetrain(gamepad1);
 
+        // ── Full reset (gamepad1 cross) ────────────────────────
         if (gamepad1.cross) {
             drivetrain.resetIMU();
             drivetrain.resetPosition();
             turret.setToFacingFront();
             turret.resetEncoder();
             SharedData.hasAutonomousRun = false;
-            autoAimEnabled = false;
+            autoAimEnabled        = false;
+            lastTurretPower       = 0;
+            tagWasVisible         = false;
+            limelightJustTookOver = false;
+            lastHeading           = 0;
+            angularVelocity       = 0;
         }
 
+        // ── Robot pose ─────────────────────────────────────────
         double robotX       = drivetrain.getX();
         double robotY       = drivetrain.getY();
         double robotHeading = drivetrain.getHeading();
 
-        // ── Distance — limelight if available, odometry fallback ──
-        LLResult llResult = null;
-        LLResultTypes.FiducialResult currentTag = null;
-        try {
-            llResult = limelight.getLatestResult();
-            if (llResult != null && llResult.isValid()) {
-                List<LLResultTypes.FiducialResult> tags = llResult.getFiducialResults();
-                if (tags != null) {
-                    for (LLResultTypes.FiducialResult t : tags) {
-                        if (t.getFiducialId() == TARGET_TAG_ID) { currentTag = t; break; }
-                    }
-                }
-            }
-        } catch (Exception e) { /* skip frame */ }
+        // ── Angular velocity (for heading compensation) ────────
+        angularVelocity = robotHeading - lastHeading;
+        lastHeading     = robotHeading;
+        if (angularVelocity >  180) angularVelocity -= 360;
+        if (angularVelocity < -180) angularVelocity += 360;
+        angularVelocity = clamp(angularVelocity, -MAX_ANGULAR_VELOCITY, MAX_ANGULAR_VELOCITY);
 
+        // ── Limelight result ───────────────────────────────────
+        LLResult llResult = limelight.getLatestResult();
+        LLResultTypes.FiducialResult currentTag = null;
+        if (llResult != null && llResult.isValid()) {
+            currentTag = getBestTag(llResult.getFiducialResults());
+        }
+
+        // ── Distance — limelight if available, odometry fallback ──
         double distanceToGoal;
         if (currentTag != null) {
             distanceToGoal = calculateLimelightDistance(currentTag.getTargetYDegrees());
@@ -160,16 +177,68 @@ public class BlueSideTele extends OpMode {
         boolean optionsNow = gamepad1.options;
         if (optionsNow && !optionsWasPressed) {
             autoAimEnabled = !autoAimEnabled;
-            if (!autoAimEnabled) turret.setMotorPowerDirectly(0);
+            if (!autoAimEnabled) {
+                lastTurretPower       = 0;
+                tagWasVisible         = false;
+                limelightJustTookOver = false;
+                turret.setMotorPowerDirectly(0);
+            }
         }
         optionsWasPressed = optionsNow;
 
-        // ── Turret — odometry only, no limelight ──────────────
+        // ── Turret control ─────────────────────────────────────
         if (autoAimEnabled) {
-            turret.aimAtGoal(robotX, robotY, robotHeading);
-            turret.update();
+
+            if (currentTag != null) {
+                // ── Tag visible — limelight takes over ────────
+                if (!tagWasVisible) {
+                    turret.resetPID();
+                    turret.setMotorPowerDirectly(0);
+                    limelightJustTookOver = true;
+                    tagWasVisible         = true;
+                    tagLostTimer.reset();
+                }
+
+                limelightJustTookOver = false;
+                tagWasVisible         = true;
+                tagLostTimer.reset();
+
+                double tx = currentTag.getTargetXDegrees() + 2.0; // 2° mounting offset
+
+                if (Math.abs(tx) < DEADBAND_DEG) {
+                    // Locked — only apply heading compensation
+                    double compensation = -HEADING_COMPENSATION * angularVelocity;
+                    lastTurretPower = clamp(compensation, -LL_MAX_SPEED, LL_MAX_SPEED);
+                } else {
+                    double power = clamp(-kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED);
+                    power += -HEADING_COMPENSATION * angularVelocity;
+                    lastTurretPower = clamp(power, -LL_MAX_SPEED, LL_MAX_SPEED);
+                }
+
+                turret.setMotorPowerDirectly(lastTurretPower);
+
+            } else {
+                // ── Tag not visible — odometry takes over ─────
+                if (tagWasVisible && tagLostTimer.seconds() < TAG_LOST_HOLD_SECONDS) {
+                    // Brief hold at last power to avoid jerk
+                    double power = lastTurretPower + (-HEADING_COMPENSATION * angularVelocity);
+                    turret.setMotorPowerDirectly(clamp(power, -LL_MAX_SPEED, LL_MAX_SPEED));
+                } else {
+                    tagWasVisible         = false;
+                    limelightJustTookOver = false;
+                    lastTurretPower       = 0;
+
+                    turret.aimAtGoal(robotX, robotY, robotHeading);
+                    turret.update();
+
+                    double feedforward = turret.getMotorPower()
+                            + (-HEADING_COMPENSATION * angularVelocity);
+                    turret.setMotorPowerDirectly(clamp(feedforward, -LL_MAX_SPEED, LL_MAX_SPEED));
+                }
+            }
+
         } else {
-            // Manual dpad
+            // ── Manual turret — gamepad2 dpad ─────────────────
             if (gamepad2.dpad_left && !dpadLeftPressed)
                 turret.setTurretAngle(turret.getCurrentAngle() - TURRET_INCREMENT);
             dpadLeftPressed = gamepad2.dpad_left;
@@ -199,33 +268,9 @@ public class BlueSideTele extends OpMode {
         if (rightTriggerNow && !rightTriggerWasPressed) intakeTransfer.toggleIntake();
         rightTriggerWasPressed = rightTriggerNow;
 
-        // ── Dip button (gamepad1 triangle) ────────────────────
-        boolean triangleNow = gamepad1.triangle;
-        if (triangleNow && !triangleWasPressed && !dipping && shootState == ShootState.IDLE) {
-            dipping = true;
-            dipTimer.reset();
-            intakeTransfer.setFloorIntaking();
-        }
-        triangleWasPressed = triangleNow;
-
-        if (dipping) {
-            if (dipTimer.seconds() >= DIP_DOWN_SEC)  intakeTransfer.setIntaking();
-            if (dipTimer.seconds() >= DIP_TOTAL_SEC) dipping = false;
-        }
-
         // ── Auto-stop intake when fully loaded ─────────────────
-        if (intakeTransfer.isIntaking() && shootState == ShootState.IDLE && !dipping) {
-            if (intakeTransfer.isFullyLoaded()) {
-                if (!fullLoadPending) {
-                    fullLoadPending = true;
-                    fullLoadTimer.reset();
-                } else if (fullLoadTimer.seconds() >= FULL_LOAD_CONFIRM_SEC) {
-                    intakeTransfer.setIdle();
-                    fullLoadPending = false;
-                }
-            }
-        } else {
-            fullLoadPending = false;
+        if (intakeTransfer.isIntaking() && intakeTransfer.isFullyLoaded()&& shootState == ShootState.IDLE) {
+            intakeTransfer.setIdle();
         }
 
         // ── Outtake (gamepad1 left trigger, hold) ─────────────
@@ -241,8 +286,6 @@ public class BlueSideTele extends OpMode {
         }
         if (gamepad1.left_bumper && shootState != ShootState.IDLE) {
             launcher.closeLatch();
-            launcher.stopFlywheel();
-            shooterRunning = false;
             intakeTransfer.setIdle();
             shootState = ShootState.IDLE;
         }
@@ -250,25 +293,40 @@ public class BlueSideTele extends OpMode {
 
         // ── Telemetry ──────────────────────────────────────────
         telemetry.addLine("=== MODE ===");
-        telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED (odometry)" : "MANUAL");
+        telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED" : "MANUAL");
         telemetry.addData("Shoot State", shootState);
-        telemetry.addData("Dipping",     dipping ? "YES" : "NO");
+
         telemetry.addLine();
         telemetry.addLine("=== INTAKE ===");
         intakeTransfer.updateTelemetry();
+
         telemetry.addLine();
         telemetry.addLine("=== LAUNCHER ===");
         launcher.updateTelemetry();
-        telemetry.addData("Distance",    "%.1f in", distanceToGoal);
-        telemetry.addData("Dist source", currentTag != null ? "Limelight" : "Odometry");
+        telemetry.addData("Distance",       "%.1f in", distanceToGoal);
+        telemetry.addData("Dist source",    currentTag != null ? "Limelight" : "Odometry");
+
         telemetry.addLine();
         telemetry.addLine("=== TURRET ===");
-        turret.updateTelemetry();
+        if (autoAimEnabled) {
+            telemetry.addData("Mode",        tagWasVisible ? "LIMELIGHT" : "ODOMETRY");
+            telemetry.addData("Turret Angle","%.1f°", turret.getCurrentAngle());
+            telemetry.addData("Last Power",  "%.3f",  lastTurretPower);
+            if (currentTag != null) {
+                telemetry.addData("tx raw",  "%.2f°", currentTag.getTargetXDegrees());
+                telemetry.addData("ty",      "%.2f°", currentTag.getTargetYDegrees());
+                telemetry.addData("Tag ID",  (int) currentTag.getFiducialId());
+            }
+        } else {
+            turret.updateTelemetry();
+        }
+
         telemetry.addLine();
         telemetry.addLine("=== ODOMETRY ===");
         telemetry.addData("X",       "%.1f in", robotX);
         telemetry.addData("Y",       "%.1f in", robotY);
         telemetry.addData("Heading", "%.1f°",   robotHeading);
+
         telemetry.update();
     }
 
@@ -293,40 +351,23 @@ public class BlueSideTele extends OpMode {
                     shootTimer.reset();
                 }
                 break;
-
             case OPEN_LATCH:
-                // Wait for front beam to clear (ball has entered flywheel)
                 if (intakeTransfer.isFrontBeamClear()) {
                     shootState = ShootState.WAIT_BALL_GONE;
                     shootTimer.reset();
                 }
                 break;
-
             case WAIT_BALL_GONE:
-                // Give extra time to make sure ball is fully through
                 if (shootTimer.seconds() >= BALL_CLEAR_WAIT_SEC) {
                     launcher.closeLatch();
+                    intakeTransfer.setIdle();
                     shootState = ShootState.CLOSE_LATCH;
                     shootTimer.reset();
                 }
                 break;
-
             case CLOSE_LATCH:
-                // Give flywheel time to recover before next ball
-                if (shootTimer.seconds() >= CLOSE_LATCH_WAIT_SEC) {
-                    if (!intakeTransfer.isEmpty()) {
-                        launcher.openLatch();
-                        shootState = ShootState.OPEN_LATCH;
-                        shootTimer.reset();
-                    } else {
-                        intakeTransfer.setIdle();
-                        launcher.stopFlywheel();
-                        shooterRunning = false;
-                        shootState = ShootState.IDLE;
-                    }
-                }
+                if (shootTimer.seconds() >= 0.1) shootState = ShootState.IDLE;
                 break;
-
             case IDLE:
             default:
                 break;
@@ -340,6 +381,18 @@ public class BlueSideTele extends OpMode {
         return (TARGET_HEIGHT_INCHES - CAMERA_HEIGHT_INCHES) / Math.tan(angleToTargetRad);
     }
 
+    private LLResultTypes.FiducialResult getBestTag(List<LLResultTypes.FiducialResult> tags) {
+        if (tags == null || tags.isEmpty()) return null;
+        for (LLResultTypes.FiducialResult t : tags)
+            if (t.getFiducialId() == TARGET_TAG_ID) return t;
+        return null;
+    }
+
+    private static double clamp(double v, double min, double max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    // ── Stop ───────────────────────────────────────────────────
     @Override
     public void stop() {
         launcher.stopFlywheel();

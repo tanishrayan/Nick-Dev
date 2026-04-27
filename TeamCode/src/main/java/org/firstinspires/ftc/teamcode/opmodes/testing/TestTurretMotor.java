@@ -9,97 +9,104 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 @TeleOp(name = "TestTurretMotor", group = "testing")
 public class TestTurretMotor extends LinearOpMode {
 
-    // ── Constants ──────────────────────────────────────────────
-    static final double TICKS_PER_MOTOR_REV = 28.0;   // 28 PPR × 4 quadrature
-    static final double GEAR_REDUCTION      = (50.0/20.0) * (74.0/20.0) * (120.0/25.0); // 44.4 : 1
-    static final double TICKS_PER_TURRET_REV = TICKS_PER_MOTOR_REV * GEAR_REDUCTION;    // ~4973
+    static final double TICKS_PER_MOTOR_REV  = 28.0;
+    static final double GEAR_REDUCTION       = (50.0/20.0) * (74.0/20.0) * (120.0/25.0);
+    static final double TICKS_PER_TURRET_REV = TICKS_PER_MOTOR_REV * GEAR_REDUCTION;
 
-    // Position targets (ticks) — adjust to match your physical turret limits
-    static final int POS_CENTER =  0;
-    static final int POS_LEFT   = (int)( TICKS_PER_TURRET_REV * 0.25);   // +90°
-    static final int POS_RIGHT  = (int)(-TICKS_PER_TURRET_REV * 0.25);   // -90°
-
-    // ── Hardware ───────────────────────────────────────────────
     DcMotorEx turretMotor;
 
     @Override
     public void runOpMode() {
-
-        // ── Init ────────────────────────────────────────────────
-        // TODO: replace "turretMotor" with your hardwareMap name
         turretMotor = hardwareMap.get(DcMotorEx.class, "turret");
-
-        turretMotor.setDirection(DcMotorSimple.Direction.FORWARD); // flip to REVERSE if needed
+        turretMotor.setDirection(DcMotorSimple.Direction.FORWARD);
         turretMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        telemetry.addLine("TestTurretMotor ready");
-        telemetry.addLine("──────────────────────────────");
-        telemetry.addLine("GP1 Left Stick Y  → raw power");
-        telemetry.addLine("GP1 A             → go to CENTER (0°)");
-        telemetry.addLine("GP1 X             → go to LEFT  (+90°)");
-        telemetry.addLine("GP1 B             → go to RIGHT (-90°)");
-        telemetry.addLine("GP1 Y             → STOP / RUN_WITHOUT_ENCODER");
+        telemetry.addLine("Point turret straight forward then press START");
         telemetry.update();
-
         waitForStart();
 
-        // ── Mode tracking ───────────────────────────────────────
-        boolean positionMode = false;
+        // ── Step size options ──────────────────────────────────
+        int[] stepSizes = {1, 5, 10, 50, 100};
+        int stepIndex   = 2; // start at 10 ticks
+
+        // ── Target tick tracking ───────────────────────────────
+        int targetTicks = 0;
+
+        // ── Edge detection ─────────────────────────────────────
+        boolean dpadUpLast    = false;
+        boolean dpadDownLast  = false;
+        boolean dpadLeftLast  = false;
+        boolean dpadRightLast = false;
+        boolean aLast         = false;
+        boolean yLast         = false;
 
         while (opModeIsActive()) {
 
-            // ── Button: position presets ────────────────────────
-            if (gamepad1.a) {
-                goToPosition(POS_CENTER);
-                positionMode = true;
-            } else if (gamepad1.x) {
-                goToPosition(POS_LEFT);
-                positionMode = true;
-            } else if (gamepad1.b) {
-                goToPosition(POS_RIGHT);
-                positionMode = true;
-            } else if (gamepad1.y) {
-                // Return to manual mode
+            // ── A = reset encoder to 0 (mark this as front) ───
+            boolean aNow = gamepad1.a;
+            if (aNow && !aLast) {
+                turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
                 turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-                turretMotor.setPower(0);
-                positionMode = false;
+                targetTicks = 0;
             }
+            aLast = aNow;
 
-            // ── Left stick: raw power (only in manual mode) ─────
-            if (!positionMode) {
-                double stick = -gamepad1.left_stick_y;   // push up = positive
-                // small deadband to avoid drift
-                if (Math.abs(stick) < 0.05) stick = 0.0;
-                turretMotor.setPower(stick);
+            // ── Y = cycle step size ────────────────────────────
+            boolean yNow = gamepad1.y;
+            if (yNow && !yLast) {
+                stepIndex = (stepIndex + 1) % stepSizes.length;
             }
+            yLast = yNow;
 
-            // ── Telemetry ───────────────────────────────────────
-            int    ticks   = turretMotor.getCurrentPosition();
-            double degrees = (ticks / TICKS_PER_TURRET_REV) * 360.0;
-            double power   = turretMotor.getPower();
-            double rpm     = turretMotor.getVelocity() / TICKS_PER_MOTOR_REV * 60.0; // motor shaft RPM
+            int step = stepSizes[stepIndex];
 
-            telemetry.addData("Mode",           positionMode ? "POSITION" : "RAW POWER");
-            telemetry.addLine("──────────────────────────────");
-            telemetry.addData("Encoder Ticks",  ticks);
-            telemetry.addData("Turret Angle",   "%.1f°", degrees);
-            telemetry.addData("Motor Power",    "%.2f",  power);
-            telemetry.addData("Motor RPM",      "%.0f",  rpm);
-            telemetry.addLine("──────────────────────────────");
-            telemetry.addData("Ticks/Rev (calc)", "%.1f", TICKS_PER_TURRET_REV);
-            telemetry.addData("Gear Reduction",   "%.2f : 1", GEAR_REDUCTION);
+            // ── Dpad right = move right (positive ticks) ───────
+            boolean dRightNow = gamepad1.dpad_right;
+            if (dRightNow && !dpadRightLast) {
+                targetTicks += step;
+            }
+            dpadRightLast = dRightNow;
+
+            // ── Dpad left = move left (negative ticks) ─────────
+            boolean dLeftNow = gamepad1.dpad_left;
+            if (dLeftNow && !dpadLeftLast) {
+                targetTicks -= step;
+            }
+            dpadLeftLast = dLeftNow;
+
+            // ── Drive to target with simple P ─────────────────
+            int    currentTicks = turretMotor.getCurrentPosition();
+            double error        = targetTicks - currentTicks;
+            double power        = error * 0.003;
+            power = Math.max(-0.5, Math.min(0.5, power));
+            if (Math.abs(error) < 5) power = 0;
+            turretMotor.setPower(power);
+
+            // ── Calculated angle based on current gear ratio ───
+            double calculatedDegrees = (currentTicks / TICKS_PER_TURRET_REV) * 360.0;
+
+            // ── Telemetry ──────────────────────────────────────
+            telemetry.addLine("=== TURRET TICK FINDER ===");
+            telemetry.addData("Step Size",         "%d ticks  (Y to change)", step);
+            telemetry.addLine();
+            telemetry.addData("Target Ticks",      targetTicks);
+            telemetry.addData("Current Ticks",     currentTicks);
+            telemetry.addData("Calculated Angle",  "%.1f°", calculatedDegrees);
+            telemetry.addLine();
+            telemetry.addLine("=== RECORD THESE ===");
+            telemetry.addLine("Move to TRUE 90° RIGHT, note Current Ticks");
+            telemetry.addLine("Move to TRUE 90° LEFT,  note Current Ticks");
+            telemetry.addLine();
+            telemetry.addData("Ticks for 90° (calc)", "%.0f", TICKS_PER_TURRET_REV * 0.25);
+            telemetry.addData("Ticks/Rev (calc)",     "%.1f", TICKS_PER_TURRET_REV);
+            telemetry.addLine();
+            telemetry.addLine("CONTROLS:");
+            telemetry.addLine("Dpad R/L = move  Y = step size  A = zero here");
             telemetry.update();
         }
 
         turretMotor.setPower(0);
-    }
-
-    /** Drive to a tick target using RUN_TO_POSITION at moderate speed */
-    private void goToPosition(int targetTicks) {
-        turretMotor.setTargetPosition(targetTicks);
-        turretMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        turretMotor.setPower(0.4);   // ~40% — safe for testing, increase later
     }
 }
