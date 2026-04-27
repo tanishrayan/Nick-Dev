@@ -132,7 +132,21 @@ public class ShooterIntakeTest extends OpMode {
                 bottomMotor.setPower(0);
             }
         }
+        double avg = (Math.abs(topMotor.getVelocity()) + Math.abs(bottomMotor.getVelocity())) / 2.0;
+
         circlePressed = circleNow;
+        boolean rbNow = gamepad1.right_bumper;
+        if (rbNow && !rbPressed) {
+            double error = Math.abs(targetVelocity - avg); // avg already calculated above
+            if (error < 20) { // only open if flywheel is settled
+                if (latchServo.getPosition() > 0.75) {
+                    latchServo.setPosition(LATCH_OPEN);
+                } else {
+                    latchServo.setPosition(LATCH_CLOSED);
+                }
+            }
+        }
+        rbPressed = rbNow;
 
         // ── Intake pivot toggle (Square) ───────────────────────
         boolean squareNow = gamepad1.square;
@@ -151,7 +165,6 @@ public class ShooterIntakeTest extends OpMode {
         }
 
         // ── Latch toggle (RB) / abort (LB) ────────────────────
-        boolean rbNow = gamepad1.right_bumper;
         if (rbNow && !rbPressed) {
             if (latchServo.getPosition() > 0.75) {
                 latchServo.setPosition(LATCH_OPEN);
@@ -260,7 +273,6 @@ public class ShooterIntakeTest extends OpMode {
         telemetry.addData("Target",        "%.0f ticks/s", targetVelocity);
         telemetry.addData("Top actual",    "%.0f ticks/s", topMotor.getVelocity());
         telemetry.addData("Bottom actual", "%.0f ticks/s", bottomMotor.getVelocity());
-        double avg = (Math.abs(topMotor.getVelocity()) + Math.abs(bottomMotor.getVelocity())) / 2.0;
         telemetry.addData("Avg velocity",  "%.0f ticks/s", avg);
         telemetry.addData("Error",         "%.0f ticks/s", targetVelocity - avg);
         telemetry.addLine();

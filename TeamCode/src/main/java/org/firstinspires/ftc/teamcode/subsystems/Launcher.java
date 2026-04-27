@@ -113,16 +113,16 @@ public class Launcher {
 
     public double calculateFlywheelVelocity(double distanceToGoal) {
         double d = distanceToGoal;
-        return 0.1028 * d * d - 10.40 * d + 1691.3;
+        return 0.1028 * d * d - 10.40 * d + 1730.3;
     }
 
     public double calculateHoodAngle(double distanceToGoal) {
         double position;
         if (distanceToGoal <= 85) {
-            position = 0.669;
+            position = 0.729;
         } else if (distanceToGoal <= 102) {
             double t = (distanceToGoal - 85) / (102 - 85);
-            position = 0.669 + t * (0.569 - 0.669);
+            position = 0.729 + t * (0.569 - 0.669);
         } else if (distanceToGoal <= 119) {
             double t = (distanceToGoal - 102) / (119 - 102);
             position = 0.569 + t * (0.32 - 0.569);

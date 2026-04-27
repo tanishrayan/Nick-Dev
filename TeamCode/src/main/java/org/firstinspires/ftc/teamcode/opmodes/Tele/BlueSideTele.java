@@ -42,9 +42,12 @@ public class BlueSideTele extends OpMode {
     private boolean tagWasVisible = false;
 
     // ── Shooter state ──────────────────────────────────────────
-    private double  currentVelocity = 1900.0;
-    private boolean shooterRunning  = false;
-    private boolean autoAimEnabled  = false;
+    private double  currentVelocity     = 1700.0;
+    private double  currentHoodPosition = 0.6;
+    private static final double HOOD_DEADBAND     = 0.005;
+    private static final double VELOCITY_DEADBAND = 25.0;
+    private boolean shooterRunning = false;
+    private boolean autoAimEnabled = false;
 
     // ── Shooting sequence ──────────────────────────────────────
     private enum ShootState { IDLE, SPINUP, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH }
@@ -97,7 +100,7 @@ public class BlueSideTele extends OpMode {
         }
 
         turret.setGoalPosition(GOAL_X, GOAL_Y);
-        launcher.setHoodRetracted();
+        launcher.setHoodPosition(currentHoodPosition);
         launcher.closeLatch();
 
         telemetry.addLine("Ready.");
@@ -123,6 +126,20 @@ public class BlueSideTele extends OpMode {
         double robotY       = drivetrain.getY();
         double robotHeading = drivetrain.getHeading();
 
+        // ── Distance from odometry → auto hood + RPM ──────────
+        double distanceToGoal = turret.calculateDistanceToGoal(robotX, robotY);
+        double newVelocity    = launcher.calculateFlywheelVelocity(distanceToGoal);
+        double newHood        = launcher.calculateHoodAngle(distanceToGoal);
+
+        if (Math.abs(newHood - currentHoodPosition) > HOOD_DEADBAND) {
+            currentHoodPosition = newHood;
+            launcher.setHoodPosition(currentHoodPosition);
+        }
+        if (Math.abs(newVelocity - currentVelocity) > VELOCITY_DEADBAND) {
+            currentVelocity = newVelocity;
+            if (shooterRunning) launcher.setFlywheelVelocity(currentVelocity);
+        }
+
         // ── Auto-aim toggle (gamepad1 options) ────────────────
         boolean optionsNow = gamepad1.options;
         if (optionsNow && !optionsWasPressed) {
@@ -139,25 +156,20 @@ public class BlueSideTele extends OpMode {
             LLResultTypes.FiducialResult tag = getTag();
 
             if (tagWasVisible && tag == null) {
-                // Tag lost — release latch, go back to odometry
                 tagWasVisible = false;
             }
 
             if (!tagWasVisible) {
-                // Odometry coarse aim
                 turret.aimAtGoal(robotX, robotY, robotHeading);
                 turret.update();
-                // Hand off to limelight once settled and tag visible
                 if (turret.isAtTarget() && tag != null) {
                     tagWasVisible = true;
                 }
             } else {
-                // Limelight fine adjust
                 double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
                 if (Math.abs(tx) > DEADBAND_DEG) {
                     turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
                 } else {
-                    // Locked — correct encoder drift from belt skip
                     turret.setMotorPowerDirectly(0);
                     double trueAngle = turret.calculateAngleToGoal(robotX, robotY, robotHeading);
                     turret.correctEncoderFromLimelight(trueAngle);
@@ -165,7 +177,6 @@ public class BlueSideTele extends OpMode {
             }
 
         } else {
-            // ── Manual dpad ───────────────────────────────────
             if (gamepad2.dpad_left && !dpadLeftPressed)
                 turret.setTurretAngle(turret.getCurrentAngle() - TURRET_INCREMENT);
             dpadLeftPressed = gamepad2.dpad_left;
@@ -256,6 +267,7 @@ public class BlueSideTele extends OpMode {
         telemetry.addLine();
         telemetry.addLine("=== LAUNCHER ===");
         launcher.updateTelemetry();
+        telemetry.addData("Distance",    "%.1f in", distanceToGoal);
         telemetry.addLine();
         telemetry.addLine("=== TURRET ===");
         turret.updateTelemetry();
