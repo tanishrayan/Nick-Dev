@@ -61,17 +61,17 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private static final double GOAL_Y = 72.0;
 
     // ── Waypoints — offset from (35.3, 62.1) start ────────────
-    private final Pose startPose       = new Pose(35.3,  62.1,  Math.toRadians(0));
-    private final Pose shootPose1      = new Pose(13.3,  12.1,  Math.toRadians(0));
-    private final Pose controlPose1    = new Pose(14.3, -14.9,  Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(62.0,  -7.9,  Math.toRadians(0));
-    private final Pose shootPose2      = new Pose(13.3,  12.1,  Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(58.5, -10.5,  Math.toRadians(45.5));
-    private final Pose shootPose3      = new Pose(13.3,  12.1,  Math.toRadians(0));
-    private final Pose shootPose4      = new Pose(13.3,  12.1,  Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(55.5,  16.1,  Math.toRadians(0));
-    private final Pose shootPose5      = new Pose(13.3,  12.1,  Math.toRadians(0));
-    private final Pose parkPose        = new Pose(40.3,  12.1,  Math.toRadians(0));
+    private final Pose startPose       = new Pose(35.3,  62.1, Math.toRadians(0)); //-35.3, +62.1
+    private final Pose shootPose1      = new Pose(13.3,  12.1, Math.toRadians(0));
+    private final Pose controlPose1    = new Pose(14.3,   -14.9, Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(62.0,    -7.9, Math.toRadians(0));
+    private final Pose shootPose2      = new Pose(13.3,  12.1, Math.toRadians(0));
+    private final Pose gateOpener      = new Pose(60.2 ,   -10.5, Math.toRadians(45.5));
+    private final Pose shootPose3      = new Pose(13.3,  12.1, Math.toRadians(0));
+    private final Pose shootPose4      = new Pose(13.3,  12.1, Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(52.5,  16.1, Math.toRadians(0));
+    private final Pose shootPose5      = new Pose(13.3,  12.1, Math.toRadians(0));
+    private final Pose parkPose        = new Pose(40.3,  12.1, Math.toRadians(0));
 
     // ── Path chains ───────────────────────────────────────────
     private PathChain toShoot1, toIntake1, toShoot2;
