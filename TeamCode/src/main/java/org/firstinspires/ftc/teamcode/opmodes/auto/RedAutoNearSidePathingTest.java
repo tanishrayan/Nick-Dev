@@ -48,7 +48,7 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private static final double LL_MAX_SPEED        = 0.3;
     private static final double DEADBAND_DEG        = 1.0;
     private static final double MOUNTING_OFFSET_DEG = -1.0;
-    private static final int    TARGET_TAG_ID       = 24g;
+    private static final int    TARGET_TAG_ID       = 24;
     private boolean tagWasVisible = false;
 
     // ── Shoot sequence ─────────────────────────────────────────

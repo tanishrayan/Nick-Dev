@@ -60,11 +60,11 @@ public class RedAutoFarSidePathingTest extends OpMode {
     private static final double GATE_INTAKE_SEC = 2.0;
 
     // ── Waypoints ─────────────────────────────────────────────
-    private final Pose startShootPose = new Pose(0,   0,    Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(44, 27,   Math.toRadians(0));
-    private final Pose controlPose1    = new Pose(-2, 29,   Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(48,  0, Math.toRadians(0));
-    private final Pose parkPose        = new Pose(-2,   29,   Math.toRadians(0));
+    private final Pose startShootPose  = new Pose(0,     0,    Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(44,    27,  Math.toRadians(0));
+    private final Pose controlPose1    = new Pose(-2,    29,  Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(48,    0,    Math.toRadians(0));
+    private final Pose parkPose        = new Pose(-2,    29,  Math.toRadians(0));
 
     // ── Path chains ───────────────────────────────────────────
     private PathChain toIntakeCurve, toShootCurve, toIntakeLine, toShootLine, toPark;
