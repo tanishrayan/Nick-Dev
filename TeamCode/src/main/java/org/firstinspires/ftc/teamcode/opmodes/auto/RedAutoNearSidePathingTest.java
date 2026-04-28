@@ -31,9 +31,6 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private Follower         follower;
     private Timer            pathTimer, opmodeTimer;
     private int              pathState;
-    private static final double FIXED_RPM         = 1700.0;
-    private static final double FIXED_HOOD        = 0.6;
-    private static final double FIXED_TURRET_DEG  = -45.6;
 
     private Drivetrain        drivetrain;
     private IntakeAndTransfer intakeTransfer;
@@ -42,7 +39,6 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private Limelight3A       limelight;
 
     // ── Timing constants ──────────────────────────────────────
-    private static final double SPINUP_TIMEOUT_SEC   = 3.0;
     private static final double BALL_CLEAR_WAIT_SEC  = 0.5;
     private static final double CLOSE_LATCH_WAIT_SEC = 0.35;
     private static final double GATE_INTAKE_SEC      = 1.0;
@@ -56,7 +52,7 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private boolean tagWasVisible = false;
 
     // ── Shoot sequence ─────────────────────────────────────────
-    private enum ShootSeqState { IDLE, SPINUP, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
+    private enum ShootSeqState { IDLE, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
     private ShootSeqState shootSeqState = ShootSeqState.IDLE;
     private Timer         shootSeqTimer = new Timer();
 
@@ -64,18 +60,18 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private static final double GOAL_X = 72.0;
     private static final double GOAL_Y = 72.0;
 
-    // ── Waypoints ─────────────────────────────────────────────
-    private final Pose startPose       = new Pose(0,      0,    Math.toRadians(0));
-    private final Pose shootPose1      = new Pose(-22,    -50,   Math.toRadians(0));
-    private final Pose controlPose1    = new Pose(-21,    -77,   Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(26.7,   -70,   Math.toRadians(0));
-    private final Pose shootPose2      = new Pose(-22,    -50,   Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(23.2,   -72.6, Math.toRadians(-32.5));
-    private final Pose shootPose3      = new Pose(-22,    -50,   Math.toRadians(0));
-    private final Pose shootPose4      = new Pose(-22,    -50,   Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(20.2,   -46,   Math.toRadians(0));
-    private final Pose shootPose5      = new Pose(-22,    -50,   Math.toRadians(0));
-    private final Pose parkPose        = new Pose(5,      -50,   Math.toRadians(0));
+    // ── Waypoints — offset from (35.3, 62.1) start ────────────
+    private final Pose startPose       = new Pose(35.3,  62.1,  Math.toRadians(0));
+    private final Pose shootPose1      = new Pose(13.3,  12.1,  Math.toRadians(0));
+    private final Pose controlPose1    = new Pose(14.3, -14.9,  Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(62.0,  -7.9,  Math.toRadians(0));
+    private final Pose shootPose2      = new Pose(13.3,  12.1,  Math.toRadians(0));
+    private final Pose gateOpener      = new Pose(58.5, -10.5,  Math.toRadians(-32.5));
+    private final Pose shootPose3      = new Pose(13.3,  12.1,  Math.toRadians(0));
+    private final Pose shootPose4      = new Pose(13.3,  12.1,  Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(55.5,  16.1,  Math.toRadians(0));
+    private final Pose shootPose5      = new Pose(13.3,  12.1,  Math.toRadians(0));
+    private final Pose parkPose        = new Pose(40.3,  12.1,  Math.toRadians(0));
 
     // ── Path chains ───────────────────────────────────────────
     private PathChain toShoot1, toIntake1, toShoot2;
@@ -152,21 +148,22 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private void autonomousPathUpdate() {
         switch (pathState) {
 
-            case 0: // Start driving to shoot 1, spin up immediately
+            case 0:
                 follower.followPath(toShoot1);
                 prepareShooter();
                 setPathState(1);
                 break;
 
-            case 1: // Keep spinning up every loop, shoot as soon as arrived + ready
+            case 1:
                 prepareShooter();
                 if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(2);
                 }
                 break;
 
-            case 2: // Wait for shoot done, start intake, drive to intake 1
+            case 2:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -176,40 +173,41 @@ public class RedAutoNearSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 3: // Intaking — stop when full or path done, spin up on the way back
+            case 3:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIdle();
+                    intakeTransfer.setIntaking(); // keep pivot down while driving back
                     follower.followPath(toShoot2, true);
                     setPathState(4);
                 }
                 break;
 
-            case 4: // Keep spinning up, shoot as soon as arrived + ready
+            case 4:
                 prepareShooter();
                 if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(5);
                 }
                 break;
 
-            case 5: // Wait shoot done, drive to gate 1, spin up on the way
+            case 5:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
+                    intakeTransfer.setIntaking();
                     follower.followPath(openGate1, true);
                     setPathState(6);
                 }
                 break;
 
-            case 6: // Arrived at gate 1 — start intake
+            case 6:
                 if (!follower.isBusy()) {
-                    intakeTransfer.setIntaking();
                     setPathState(7);
                 }
                 break;
 
-            case 7: // Dwell at gate 1, spin up while waiting
+            case 7:
                 prepareShooter();
                 if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIdle();
@@ -218,31 +216,32 @@ public class RedAutoNearSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 8: // Keep spinning up, shoot as soon as arrived + ready
+            case 8:
                 prepareShooter();
                 if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(9);
                 }
                 break;
 
-            case 9: // Wait shoot done, drive to gate 2
+            case 9:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
+                    intakeTransfer.setIntaking();
                     follower.followPath(openGate2, true);
                     setPathState(10);
                 }
                 break;
 
-            case 10: // Arrived at gate 2 — start intake
+            case 10:
                 if (!follower.isBusy()) {
-                    intakeTransfer.setIntaking();
                     setPathState(11);
                 }
                 break;
 
-            case 11: // Dwell at gate 2, spin up while waiting
+            case 11:
                 prepareShooter();
                 if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIdle();
@@ -251,15 +250,16 @@ public class RedAutoNearSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 12: // Keep spinning up, shoot as soon as arrived + ready
+            case 12:
                 prepareShooter();
                 if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(13);
                 }
                 break;
 
-            case 13: // Wait shoot done, start intake, drive to intake 2
+            case 13:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -269,24 +269,25 @@ public class RedAutoNearSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 14: // Intaking — stop when full or path done, spin up on the way back
+            case 14:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIdle();
+                    intakeTransfer.setIntaking(); // keep pivot down while driving back
                     follower.followPath(toShoot5, true);
                     setPathState(15);
                 }
                 break;
 
-            case 15: // Keep spinning up, shoot as soon as arrived + ready
+            case 15:
                 prepareShooter();
                 if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(16);
                 }
                 break;
 
-            case 16: // Wait shoot done, park
+            case 16:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -295,7 +296,7 @@ public class RedAutoNearSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 17: // Wait to park
+            case 17:
                 if (!follower.isBusy()) {
                     setPathState(-1);
                 }
@@ -303,7 +304,7 @@ public class RedAutoNearSidePathingTest extends OpMode {
         }
     }
 
-    // ── Turret — same logic as BlueSideTele ───────────────────
+    // ── Turret ────────────────────────────────────────────────
 
     private void updateTurretAim() {
         Pose p   = follower.getPose();
@@ -313,16 +314,12 @@ public class RedAutoNearSidePathingTest extends OpMode {
 
         LLResultTypes.FiducialResult tag = getTag();
 
-        if (tagWasVisible && tag == null) {
-            tagWasVisible = false;
-        }
+        if (tagWasVisible && tag == null) tagWasVisible = false;
 
         if (!tagWasVisible) {
             turret.aimAtGoal(x, y, h);
             turret.update();
-            if (turret.isAtTarget() && tag != null) {
-                tagWasVisible = true;
-            }
+            if (turret.isAtTarget() && tag != null) tagWasVisible = true;
         } else {
             double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
             if (Math.abs(tx) > DEADBAND_DEG) {
@@ -345,22 +342,12 @@ public class RedAutoNearSidePathingTest extends OpMode {
 
     private void updateShootSequence() {
         switch (shootSeqState) {
-            case SPINUP:
-                if (launcher.isFlywheelReady() || shootSeqTimer.getElapsedTimeSeconds() >= SPINUP_TIMEOUT_SEC) {
-                    launcher.openLatch();
-                    intakeTransfer.setIntaking();
-                    shootSeqState = ShootSeqState.OPEN_LATCH;
-                    shootSeqTimer.resetTimer();
-                }
-                break;
-
             case OPEN_LATCH:
                 if (intakeTransfer.isFrontBeamClear()) {
                     shootSeqState = ShootSeqState.WAIT_BALL_GONE;
                     shootSeqTimer.resetTimer();
                 }
                 break;
-
             case WAIT_BALL_GONE:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= BALL_CLEAR_WAIT_SEC) {
                     launcher.closeLatch();
@@ -368,7 +355,6 @@ public class RedAutoNearSidePathingTest extends OpMode {
                     shootSeqTimer.resetTimer();
                 }
                 break;
-
             case CLOSE_LATCH:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
@@ -381,7 +367,6 @@ public class RedAutoNearSidePathingTest extends OpMode {
                     }
                 }
                 break;
-
             case IDLE:
             case DONE:
             default:
@@ -392,9 +377,10 @@ public class RedAutoNearSidePathingTest extends OpMode {
     // ── Helpers ───────────────────────────────────────────────
 
     private void prepareShooter() {
-        launcher.setFlywheelVelocity(FIXED_RPM);
-        launcher.setHoodPosition(FIXED_HOOD);
-        turret.setTurretAngle(FIXED_TURRET_DEG);
+        Pose p = follower.getPose();
+        double distance = turret.calculateDistanceToGoal(p.getX(), p.getY());
+        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distance));
+        launcher.setHoodPosition(launcher.calculateHoodAngle(distance));
     }
 
     private void stopShooter() {
