@@ -276,7 +276,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIntaking(); // keep intake running and pivot down while driving back
-                    follower.followPath(toShoot2, true);
+                    follower.followPath(toShoot5, true);
                     setPathState(4);
                 }
                 break;

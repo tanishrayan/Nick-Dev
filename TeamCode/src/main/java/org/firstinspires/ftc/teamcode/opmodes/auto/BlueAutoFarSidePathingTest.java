@@ -59,8 +59,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     private static final double GOAL_X = 72.0;
     private static final double GOAL_Y = -72.0;
 
-    // ── Waypoints — offset from (16.2, 64.2) start ────────────
-    // Original relative poses + (16.2, 64.2)
+    // ── Waypoints ─────────────────────────────────────────────
     private final Pose startShootPose  = new Pose(16.2,  64.2, Math.toRadians(0));
     private final Pose postIntakePose1 = new Pose(60.2,  37.2, Math.toRadians(0));
     private final Pose controlPose1    = new Pose(14.2,  35.2, Math.toRadians(0));
@@ -88,14 +87,24 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         limelight.start();
 
         turret.setGoalPosition(GOAL_X, GOAL_Y);
+        turret.resetEncoder();
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
+
+        // Always force starting pose — never read from SharedData in auto
         follower.setStartingPose(startShootPose);
+        drivetrain.setPose(startShootPose);
+
+        // Clear SharedData so teleop doesn't inherit stale pose
+        SharedData.hasAutonomousRun = false;
+        SharedData.lastKnownPose    = null;
 
         launcher.closeLatch();
         launcher.setHoodRetracted();
         intakeTransfer.setIdle();
+        shootSeqState = ShootSeqState.IDLE;
+        tagWasVisible = false;
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -131,6 +140,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         intakeTransfer.setIdle();
         limelight.stop();
 
+        // Save final pose for teleop
         SharedData.lastKnownPose    = follower.getPose();
         SharedData.hasAutonomousRun = true;
     }
@@ -154,7 +164,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 2: // Shoot done, drive to intake curve with intake running
+            case 2:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -164,10 +174,10 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 3: // Intaking at curve, spin up on way back
+            case 3:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIntaking(); // keep pivot down while driving back
+                    intakeTransfer.setIntaking();
                     follower.followPath(toShootCurve, true);
                     setPathState(4);
                 }
@@ -182,7 +192,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 5: // Shoot done, drive to intake line with intake running
+            case 5:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -192,10 +202,10 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 6: // Intaking at line, spin up on way back
+            case 6:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIntaking(); // keep pivot down while driving back
+                    intakeTransfer.setIntaking();
                     follower.followPath(toShootLine, true);
                     setPathState(7);
                 }
@@ -210,7 +220,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 8: // Shoot done, drive to intake line again
+            case 8:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -266,7 +276,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 14: // Done — park
+            case 14:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
