@@ -48,7 +48,7 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private static final double LL_MAX_SPEED        = 0.3;
     private static final double DEADBAND_DEG        = 1.0;
     private static final double MOUNTING_OFFSET_DEG = -1.0;
-    private static final int    TARGET_TAG_ID       = 20;
+    private static final int    TARGET_TAG_ID       = 24g;
     private boolean tagWasVisible = false;
 
     // ── Shoot sequence ─────────────────────────────────────────
@@ -66,7 +66,7 @@ public class RedAutoNearSidePathingTest extends OpMode {
     private final Pose controlPose1    = new Pose(14.3, -14.9,  Math.toRadians(0));
     private final Pose postIntakePose1 = new Pose(62.0,  -7.9,  Math.toRadians(0));
     private final Pose shootPose2      = new Pose(13.3,  12.1,  Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(58.5, -10.5,  Math.toRadians(-32.5));
+    private final Pose gateOpener      = new Pose(58.5, -10.5,  Math.toRadians(45.5));
     private final Pose shootPose3      = new Pose(13.3,  12.1,  Math.toRadians(0));
     private final Pose shootPose4      = new Pose(13.3,  12.1,  Math.toRadians(0));
     private final Pose postIntakePose2 = new Pose(55.5,  16.1,  Math.toRadians(0));
