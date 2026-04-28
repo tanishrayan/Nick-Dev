@@ -45,7 +45,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private static final double SPINUP_TIMEOUT_SEC   = 3.0;
     private static final double BALL_CLEAR_WAIT_SEC  = 0.5;
     private static final double CLOSE_LATCH_WAIT_SEC = 0.35;
-    private static final double GATE_INTAKE_SEC      = 2.0;
+    private static final double GATE_INTAKE_SEC      = 1.0;
 
     // ── Limelight/turret constants ────────────────────────────
     private static final double kP_LIMELIGHT        = 0.03;
@@ -68,12 +68,12 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private final Pose startPose       = new Pose(35.3,  -62.1, Math.toRadians(0));
     private final Pose shootPose1      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose controlPose1    = new Pose(14.3,   14.9, Math.toRadians(0));
-    private final Pose postIntakePose1 = new Pose(69.7,    7.9, Math.toRadians(0));
+    private final Pose postIntakePose1 = new Pose(62,    7.9, Math.toRadians(0));
     private final Pose shootPose2      = new Pose(13.3,  -12.1, Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(57.6,   11.0, Math.toRadians(-50));
+    private final Pose gateOpener      = new Pose(58.5,   10.5, Math.toRadians(-32.5));
     private final Pose shootPose3      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose shootPose4      = new Pose(13.3,  -12.1, Math.toRadians(0));
-    private final Pose postIntakePose2 = new Pose(56.3,  -16.1, Math.toRadians(0));
+    private final Pose postIntakePose2 = new Pose(55.5,  -16.1, Math.toRadians(0));
     private final Pose shootPose5      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose parkPose        = new Pose(40.3,  -12.1, Math.toRadians(0));
 
