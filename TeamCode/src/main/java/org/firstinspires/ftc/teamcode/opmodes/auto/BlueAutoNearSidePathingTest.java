@@ -65,7 +65,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private static final double GOAL_Y = -72.0;
 
     // ── Waypoints ─────────────────────────────────────────────
-    private final Pose startPose       = new Pose(35.3,  -62.1, Math.toRadians(0));
+    private final Pose startPose       = new Pose(35.3,  -62.1, Math.toRadians(0)); //-35.3, +62.1
     private final Pose shootPose1      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose controlPose1    = new Pose(14.3,   14.9, Math.toRadians(0));
     private final Pose postIntakePose1 = new Pose(62,    7.9, Math.toRadians(0));
