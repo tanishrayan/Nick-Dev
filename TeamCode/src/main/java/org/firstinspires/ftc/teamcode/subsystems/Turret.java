@@ -23,7 +23,7 @@ public class Turret {
     private static final double kP        = 0.025;
     private static final double kI        = 0.0;
     private static final double kD        = 0.0;
-    private static final double MAX_POWER = 0.65;
+    private static final double MAX_POWER = 0.50;
 
     // Two-zone min power
     private static final double MIN_POWER_FAR   = 0.1;  // error > FAR_THRESHOLD ticks

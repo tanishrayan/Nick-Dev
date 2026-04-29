@@ -61,13 +61,13 @@ public class BlueSideTele extends OpMode {
     private ElapsedTime fullLoadTimer   = new ElapsedTime();
     private static final double FULL_LOAD_CONFIRM_SEC = 1.0;
 
-    // ── Dip button (gamepad1 triangle) ────────────────────────
+    // ── Dip button (GP1 triangle) ─────────────────────────────
     private boolean     dipping  = false;
     private ElapsedTime dipTimer = new ElapsedTime();
     private static final double DIP_DOWN_SEC  = 0.35;
     private static final double DIP_TOTAL_SEC = 0.65;
 
-    // ── Turret manual ─────────────────────────────────────────
+    // ── Turret ─────────────────────────────────────────────────
     private static final double TURRET_INCREMENT = 5.0;
 
     // ── Edge detection ─────────────────────────────────────────
@@ -77,6 +77,10 @@ public class BlueSideTele extends OpMode {
     private boolean triangleWasPressed     = false;
     private boolean dpadLeftPressed        = false;
     private boolean dpadRightPressed       = false;
+    private boolean gp2TriangleWasPressed  = false;
+
+    // ── Distance cache ─────────────────────────────────────────
+    private double distanceToGoal = 0.0;
 
     @Override
     public void init() {
@@ -112,6 +116,8 @@ public class BlueSideTele extends OpMode {
 
         drivetrain.handleDrivetrain(gamepad1);
 
+        // ── Full reset (GP1 cross) ────────────────────────────
+        // Burst is fully automatic inside shoot sequence — cross stays as reset.
         if (gamepad1.cross) {
             drivetrain.resetIMU();
             drivetrain.resetPosition();
@@ -126,10 +132,10 @@ public class BlueSideTele extends OpMode {
         double robotY       = drivetrain.getY();
         double robotHeading = drivetrain.getHeading();
 
-        // ── Distance from odometry → auto hood + RPM ──────────
-        double distanceToGoal = turret.calculateDistanceToGoal(robotX, robotY);
-        double newVelocity    = launcher.calculateFlywheelVelocity(distanceToGoal);
-        double newHood        = launcher.calculateHoodAngle(distanceToGoal);
+        // ── Distance → auto hood + velocity ───────────────────
+        distanceToGoal    = turret.calculateDistanceToGoal(robotX, robotY);
+        double newVelocity = launcher.calculateFlywheelVelocity(distanceToGoal);
+        double newHood     = launcher.calculateHoodAngle(distanceToGoal);
 
         if (Math.abs(newHood - currentHoodPosition) > HOOD_DEADBAND) {
             currentHoodPosition = newHood;
@@ -137,10 +143,16 @@ public class BlueSideTele extends OpMode {
         }
         if (Math.abs(newVelocity - currentVelocity) > VELOCITY_DEADBAND) {
             currentVelocity = newVelocity;
-            if (shooterRunning) launcher.setFlywheelVelocity(currentVelocity);
+            launcher.setFlywheelVelocity(currentVelocity);
         }
 
-        // ── Auto-aim toggle (gamepad1 options) ────────────────
+        // ── Bang-bang update (must run every loop) ─────────────
+        // Handles all motor power. Automatically applies burst offset when
+        // burst mode is active. Burst is enabled in startShootSequence()
+        // and disabled when sequence reaches IDLE or is aborted.
+        launcher.update(distanceToGoal);
+
+        // ── Auto-aim toggle (GP1 options) ─────────────────────
         boolean optionsNow = gamepad1.options;
         if (optionsNow && !optionsWasPressed) {
             autoAimEnabled = !autoAimEnabled;
@@ -151,44 +163,52 @@ public class BlueSideTele extends OpMode {
         }
         optionsWasPressed = optionsNow;
 
-        // ── Turret control ─────────────────────────────────────
-        if (autoAimEnabled) {
-            LLResultTypes.FiducialResult tag = getTag();
+        // ── GP2 dpad — manual turret ──────────────────────────
+        if (gamepad2.dpad_left && !dpadLeftPressed)
+            turret.setTurretAngle(turret.getCurrentAngle() - TURRET_INCREMENT);
+        dpadLeftPressed = gamepad2.dpad_left;
 
-            if (tagWasVisible && tag == null) {
+        if (gamepad2.dpad_right && !dpadRightPressed)
+            turret.setTurretAngle(turret.getCurrentAngle() + TURRET_INCREMENT);
+        dpadRightPressed = gamepad2.dpad_right;
+
+        // ── GP2 triangle — limelight encoder recal ────────────
+        boolean gp2TriangleNow = gamepad2.triangle;
+        if (gp2TriangleNow && !gp2TriangleWasPressed) {
+            LLResultTypes.FiducialResult calTag = getTag();
+            if (calTag != null) {
+                double tx = calTag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
+                double correctedAngle = turret.getCurrentAngle() + tx;
+                turret.correctEncoderFromLimelight(correctedAngle);
                 tagWasVisible = false;
             }
+        }
+        gp2TriangleWasPressed = gp2TriangleNow;
+
+        // ── Turret auto-aim or hold ───────────────────────────
+        if (autoAimEnabled) {
+            LLResultTypes.FiducialResult tag = getTag();
+            if (tagWasVisible && tag == null) tagWasVisible = false;
 
             if (!tagWasVisible) {
                 turret.aimAtGoal(robotX, robotY, robotHeading);
                 turret.update();
-                if (turret.isAtTarget() && tag != null) {
-                    tagWasVisible = true;
-                }
+                if (turret.isAtTarget() && tag != null) tagWasVisible = true;
             } else {
                 double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
                 if (Math.abs(tx) > DEADBAND_DEG) {
                     turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
                 } else {
                     turret.setMotorPowerDirectly(0);
-                    double trueAngle = turret.calculateAngleToGoal(robotX, robotY, robotHeading);
-                    turret.correctEncoderFromLimelight(trueAngle);
+                    turret.correctEncoderFromLimelight(
+                            turret.calculateAngleToGoal(robotX, robotY, robotHeading));
                 }
             }
-
         } else {
-            if (gamepad2.dpad_left && !dpadLeftPressed)
-                turret.setTurretAngle(turret.getCurrentAngle() - TURRET_INCREMENT);
-            dpadLeftPressed = gamepad2.dpad_left;
-
-            if (gamepad2.dpad_right && !dpadRightPressed)
-                turret.setTurretAngle(turret.getCurrentAngle() + TURRET_INCREMENT);
-            dpadRightPressed = gamepad2.dpad_right;
-
             turret.update();
         }
 
-        // ── Flywheel toggle (gamepad2 circle) ─────────────────
+        // ── Flywheel toggle (GP2 circle) ──────────────────────
         boolean circleNow = gamepad2.circle;
         if (circleNow && !circleWasPressed) {
             if (!shooterRunning) {
@@ -201,12 +221,12 @@ public class BlueSideTele extends OpMode {
         }
         circleWasPressed = circleNow;
 
-        // ── Intake toggle (gamepad1 right trigger) ─────────────
+        // ── Intake toggle (GP1 right trigger) ─────────────────
         boolean rightTriggerNow = gamepad1.right_trigger > 0.5;
         if (rightTriggerNow && !rightTriggerWasPressed) intakeTransfer.toggleIntake();
         rightTriggerWasPressed = rightTriggerNow;
 
-        // ── Dip button (gamepad1 triangle) ────────────────────
+        // ── Dip button (GP1 triangle) ─────────────────────────
         boolean triangleNow = gamepad1.triangle;
         if (triangleNow && !triangleWasPressed && !dipping && shootState == ShootState.IDLE) {
             dipping = true;
@@ -235,7 +255,7 @@ public class BlueSideTele extends OpMode {
             fullLoadPending = false;
         }
 
-        // ── Outtake (gamepad1 left trigger, hold) ─────────────
+        // ── Outtake (GP1 left trigger, hold) ──────────────────
         if (gamepad1.left_trigger > 0.5) {
             intakeTransfer.setOuttaking();
         } else if (intakeTransfer.getState() == IntakeAndTransfer.IntakeState.OUTTAKING) {
@@ -249,6 +269,7 @@ public class BlueSideTele extends OpMode {
         if (gamepad1.left_bumper && shootState != ShootState.IDLE) {
             launcher.closeLatch();
             launcher.stopFlywheel();
+            launcher.setBurstMode(false); // clean up burst on abort
             shooterRunning = false;
             intakeTransfer.setIdle();
             shootState = ShootState.IDLE;
@@ -267,7 +288,7 @@ public class BlueSideTele extends OpMode {
         telemetry.addLine();
         telemetry.addLine("=== LAUNCHER ===");
         launcher.updateTelemetry();
-        telemetry.addData("Distance",    "%.1f in", distanceToGoal);
+        telemetry.addData("Distance", "%.1f in", distanceToGoal);
         telemetry.addLine();
         telemetry.addLine("=== TURRET ===");
         turret.updateTelemetry();
@@ -276,6 +297,11 @@ public class BlueSideTele extends OpMode {
         telemetry.addData("X",       "%.1f in", robotX);
         telemetry.addData("Y",       "%.1f in", robotY);
         telemetry.addData("Heading", "%.1f°",   robotHeading);
+        telemetry.addLine();
+        telemetry.addLine("=== CONTROLS ===");
+        telemetry.addLine("GP2 Dpad = manual turret | GP2 Triangle = LL recal");
+        telemetry.addLine("GP1 Options = auto-aim | GP2 Circle = flywheel");
+        telemetry.addLine("GP1 RB = shoot | GP1 LB = abort | GP1 Cross = reset");
         telemetry.update();
     }
 
@@ -300,6 +326,10 @@ public class BlueSideTele extends OpMode {
             launcher.setFlywheelVelocity(currentVelocity);
             shooterRunning = true;
         }
+        // Burst mode enabled here — launcher.update() will now chase
+        // effectiveVelocity = targetVelocity + burstOffset(distance).
+        // Burst stays active until all balls are fired or sequence is aborted.
+        launcher.setBurstMode(true);
         shootState = ShootState.SPINUP;
         shootTimer.reset();
     }
@@ -307,6 +337,7 @@ public class BlueSideTele extends OpMode {
     private void updateShootSequence() {
         switch (shootState) {
             case SPINUP:
+                // Waits for flywheel to reach effectiveVelocity (includes burst offset).
                 if (launcher.isFlywheelReady()) {
                     launcher.openLatch();
                     intakeTransfer.setIntaking();
@@ -330,12 +361,16 @@ public class BlueSideTele extends OpMode {
             case CLOSE_LATCH:
                 if (shootTimer.seconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
+                        // More balls remain — open latch for next ball.
+                        // Bang-bang continues recovering between shots with burst still active.
                         launcher.openLatch();
                         shootState = ShootState.OPEN_LATCH;
                         shootTimer.reset();
                     } else {
+                        // All balls fired — disable burst and return to steady state.
                         intakeTransfer.setIdle();
                         launcher.stopFlywheel();
+                        launcher.setBurstMode(false);
                         shooterRunning = false;
                         shootState = ShootState.IDLE;
                     }
@@ -355,6 +390,7 @@ public class BlueSideTele extends OpMode {
     @Override
     public void stop() {
         launcher.stopFlywheel();
+        launcher.setBurstMode(false);
         launcher.closeLatch();
         intakeTransfer.setIdle();
         limelight.stop();

@@ -6,7 +6,6 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.util.ElapsedTime;
 
 @TeleOp(name = "Shooter Intake Test", group = "Testing")
 public class ShooterIntakeTest extends OpMode {
@@ -51,6 +50,7 @@ public class ShooterIntakeTest extends OpMode {
     private boolean flywheelRunning = false;
     private boolean intakeDeployed  = false;
     private boolean pidfTuningMode  = false;
+    private boolean latchOpen       = false;
 
     // ── Edge detection ─────────────────────────────────────────
     private boolean dpadUpPressed    = false;
@@ -92,6 +92,7 @@ public class ShooterIntakeTest extends OpMode {
 
         hoodServo.setPosition(hoodPosition);
         latchServo.setPosition(LATCH_CLOSED);
+        latchOpen = false;
         setIntakeRetracted();
 
         telemetry.addLine("Shooter Intake Test ready.");
@@ -101,21 +102,21 @@ public class ShooterIntakeTest extends OpMode {
     @Override
     public void loop() {
 
-        // ── Avg velocity — calculated first so all blocks can use it ──
-        double avg = (Math.abs(topMotor.getVelocity()) + Math.abs(bottomMotor.getVelocity())) / 2.0;
+        // ── Avg velocity ───────────────────────────────────────
+        double avg   = (Math.abs(topMotor.getVelocity()) + Math.abs(bottomMotor.getVelocity())) / 2.0;
         double error = targetVelocity - avg;
 
-        // ── PIDF mode toggle (Share) ───────────────────────────
+        // ── Share = PIDF mode toggle ───────────────────────────
         boolean shareNow = gamepad1.share;
         if (shareNow && !sharePressed) pidfTuningMode = !pidfTuningMode;
         sharePressed = shareNow;
 
-        // ── Step size (Options) ────────────────────────────────
+        // ── Options = step size ────────────────────────────────
         boolean optNow = gamepad1.options;
         if (optNow && !optionsPressed) stepIndex = (stepIndex + 1) % stepSizes.length;
         optionsPressed = optNow;
 
-        // ── Flywheel toggle (Circle) ───────────────────────────
+        // ── Circle = flywheel toggle ───────────────────────────
         boolean circleNow = gamepad1.circle;
         if (circleNow && !circlePressed) {
             flywheelRunning = !flywheelRunning;
@@ -129,7 +130,7 @@ public class ShooterIntakeTest extends OpMode {
         }
         circlePressed = circleNow;
 
-        // ── Intake pivot toggle (Square) ───────────────────────
+        // ── Square = intake pivot toggle ───────────────────────
         boolean squareNow = gamepad1.square;
         if (squareNow && !squarePressed) {
             intakeDeployed = !intakeDeployed;
@@ -138,35 +139,27 @@ public class ShooterIntakeTest extends OpMode {
         }
         squarePressed = squareNow;
 
-        // ── Intake motor (hold Triangle) ───────────────────────
-        if (gamepad1.triangle) {
-            intakeMotor.setPower(1.0);
-        } else {
-            intakeMotor.setPower(0);
-        }
+        // ── Triangle hold = intake motor ───────────────────────
+        intakeMotor.setPower(gamepad1.triangle ? 1.0 : 0.0);
 
-        // ── RB = toggle latch (only if flywheel settled within 20 ticks) ──
+        // ── RB = toggle latch (always works) ──────────────────
         boolean rbNow = gamepad1.right_bumper;
         if (rbNow && !rbPressed) {
-            if (!flywheelRunning || Math.abs(error) < 20) {
-                if (latchServo.getPosition() > 0.75) {
-                    latchServo.setPosition(LATCH_OPEN);
-                } else {
-                    latchServo.setPosition(LATCH_CLOSED);
-                }
-            }
+            latchOpen = !latchOpen;
+            latchServo.setPosition(latchOpen ? LATCH_OPEN : LATCH_CLOSED);
         }
         rbPressed = rbNow;
 
         // ── LB = force close latch ────────────────────────────
         boolean lbNow = gamepad1.left_bumper;
         if (lbNow && !lbPressed) {
+            latchOpen = false;
             latchServo.setPosition(LATCH_CLOSED);
         }
         lbPressed = lbNow;
 
+        // ── PIDF tuning or normal mode ─────────────────────────
         if (pidfTuningMode) {
-            // ── P adjust (Dpad UP/DOWN) ────────────────────────
             boolean dUpNow   = gamepad1.dpad_up;
             boolean dDownNow = gamepad1.dpad_down;
             if (dUpNow   && !dpadUpPressed)  { P += stepSizes[stepIndex]; setPIDFCoefficients(P, F); }
@@ -174,7 +167,6 @@ public class ShooterIntakeTest extends OpMode {
             dpadUpPressed   = dUpNow;
             dpadDownPressed = dDownNow;
 
-            // ── F adjust (Dpad LEFT/RIGHT) ─────────────────────
             boolean dLeftNow  = gamepad1.dpad_left;
             boolean dRightNow = gamepad1.dpad_right;
             if (dLeftNow  && !dpadLeftPressed)  { F = Math.max(0, F - stepSizes[stepIndex]); setPIDFCoefficients(P, F); }
@@ -183,7 +175,6 @@ public class ShooterIntakeTest extends OpMode {
             dpadRightPressed = dRightNow;
 
         } else {
-            // ── Velocity coarse (Dpad UP/DOWN) ─────────────────
             boolean dUpNow   = gamepad1.dpad_up;
             boolean dDownNow = gamepad1.dpad_down;
             if (dUpNow && !dpadUpPressed) {
@@ -197,7 +188,6 @@ public class ShooterIntakeTest extends OpMode {
             dpadUpPressed   = dUpNow;
             dpadDownPressed = dDownNow;
 
-            // ── Hood (Dpad LEFT/RIGHT) ─────────────────────────
             boolean dLeftNow  = gamepad1.dpad_left;
             boolean dRightNow = gamepad1.dpad_right;
             if (dLeftNow && !dpadLeftPressed) {
@@ -228,9 +218,8 @@ public class ShooterIntakeTest extends OpMode {
         // ── Telemetry ──────────────────────────────────────────
         telemetry.addLine("=== MODE ===");
         telemetry.addData("Control Mode",    pidfTuningMode ? "PIDF TUNING" : "NORMAL");
-        telemetry.addData("Flywheel Ready?", Math.abs(error) < 20 ? "YES ✓" : "NO  (error: " + (int)error + ")");
+        telemetry.addData("Flywheel Ready?", Math.abs(error) < 20 ? "YES ✓" : "NO  (" + (int)error + ")");
         telemetry.addLine();
-
         telemetry.addLine("=== FLYWHEEL ===");
         telemetry.addData("Status",        flywheelRunning ? "RUNNING" : "STOPPED");
         telemetry.addData("Target",        "%.0f ticks/s", targetVelocity);
@@ -239,33 +228,24 @@ public class ShooterIntakeTest extends OpMode {
         telemetry.addData("Avg velocity",  "%.0f ticks/s", avg);
         telemetry.addData("Error",         "%.0f ticks/s", error);
         telemetry.addLine();
-
         telemetry.addLine("=== PIDF ===");
         telemetry.addData("P",         "%.2f", P);
         telemetry.addData("F",         "%.2f", F);
         telemetry.addData("Step size", "%.2f", stepSizes[stepIndex]);
         telemetry.addLine();
-
         telemetry.addLine("=== HOOD ===");
-        telemetry.addData("Position", "%.3f", hoodPosition);
-        telemetry.addData("Min",      "%.3f", HOOD_MIN);
-        telemetry.addData("Max",      "%.3f", HOOD_MAX);
+        telemetry.addData("Position",  "%.3f", hoodPosition);
         telemetry.addLine();
-
         telemetry.addLine("=== LATCH ===");
-        telemetry.addData("Position", "%.3f", latchServo.getPosition());
+        telemetry.addData("State",     latchOpen ? "OPEN" : "CLOSED");
         telemetry.addLine();
-
         telemetry.addLine("=== INTAKE ===");
-        telemetry.addData("Pivot", intakeDeployed ? "DEPLOYED" : "RETRACTED");
-        telemetry.addData("Motor", "%.2f", intakeMotor.getPower());
+        telemetry.addData("Pivot",     intakeDeployed ? "DEPLOYED" : "RETRACTED");
+        telemetry.addData("Motor",     "%.2f", intakeMotor.getPower());
         telemetry.addLine();
-
-        telemetry.addLine("=== CONTROLS ===");
-        telemetry.addLine("Circle = flywheel  Square = pivot  Triangle(hold) = intake");
-        telemetry.addLine("RB = latch (when ready)  LB = force close latch");
-        telemetry.addLine("DPAD U/D = vel  DPAD L/R = hood  Triggers = fine vel");
-        telemetry.addLine("Share = PIDF mode  Options = step size");
+        telemetry.addLine("Circle=flywheel  Square=pivot  Triangle=intake");
+        telemetry.addLine("RB=latch  LB=close  Share=PIDF  Options=step");
+        telemetry.addLine("DPAD U/D=vel  DPAD L/R=hood  Triggers=fine vel");
         telemetry.update();
     }
 

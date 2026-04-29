@@ -92,11 +92,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
 
-        // Always force starting pose — never read from SharedData in auto
         follower.setStartingPose(startShootPose);
         drivetrain.setPose(startShootPose);
 
-        // Clear SharedData so teleop doesn't inherit stale pose
         SharedData.hasAutonomousRun = false;
         SharedData.lastKnownPose    = null;
 
@@ -140,7 +138,6 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         intakeTransfer.setIdle();
         limelight.stop();
 
-        // Save final pose for teleop
         SharedData.lastKnownPose    = follower.getPose();
         SharedData.hasAutonomousRun = true;
     }
@@ -150,14 +147,14 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     private void autonomousPathUpdate() {
         switch (pathState) {
 
-            case 0: // Shoot preload
+            case 0: // Spin up preload shot
                 prepareShooter();
                 setPathState(1);
                 break;
 
-            case 1:
+            case 1: // Wait for flywheel ready then shoot
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(2);
@@ -183,9 +180,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 4:
+            case 4: // Wait for flywheel ready then shoot
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(5);
@@ -211,9 +208,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 7:
+            case 7: // Wait for flywheel ready then shoot
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(8);
@@ -239,9 +236,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 10:
+            case 10: // Wait for flywheel ready then shoot
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(11);
@@ -267,9 +264,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 13:
+            case 13: // Wait for flywheel ready then shoot
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(14);
