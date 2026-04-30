@@ -47,13 +47,11 @@ public class RedAutoFarSidePathingTest extends OpMode {
     private static final double LL_MAX_SPEED        = 0.3;
     private static final double DEADBAND_DEG        = 1.0;
     private static final double MOUNTING_OFFSET_DEG = -1.0;
-    private static final int    TARGET_TAG_ID       = 24; // red barcode
-
-    // ── Limelight state ────────────────────────────────────────
+    private static final int    TARGET_TAG_ID       = 24;
     private boolean tagWasVisible = false;
 
     // ── Shoot sequence ─────────────────────────────────────────
-    private enum ShootSeqState { IDLE, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
+    private enum ShootSeqState { IDLE, SPINUP, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
     private ShootSeqState shootSeqState = ShootSeqState.IDLE;
     private Timer         shootSeqTimer = new Timer();
 
@@ -61,8 +59,7 @@ public class RedAutoFarSidePathingTest extends OpMode {
     private static final double GOAL_X = 72.0;
     private static final double GOAL_Y = 72.0;
 
-    // ── Waypoints — offset from (16.2, -64.2) start ───────────
-    // Original relative + (16.2, -64.2)
+    // ── Waypoints ─────────────────────────────────────────────
     private final Pose startShootPose  = new Pose(16.2,  -64.2, Math.toRadians(0));
     private final Pose postIntakePose1 = new Pose(60.2,  -37.2, Math.toRadians(0));
     private final Pose controlPose1    = new Pose(14.2,  -35.2, Math.toRadians(0));
@@ -71,6 +68,9 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
     // ── Path chains ───────────────────────────────────────────
     private PathChain toIntakeCurve, toShootCurve, toIntakeLine, toShootLine, toPark;
+
+    // ── Distance cache ─────────────────────────────────────────
+    private double distanceToGoal = 0.0;
 
     @Override
     public void init() {
@@ -90,14 +90,20 @@ public class RedAutoFarSidePathingTest extends OpMode {
         limelight.start();
 
         turret.setGoalPosition(GOAL_X, GOAL_Y);
+        turret.resetEncoder();
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
         follower.setStartingPose(startShootPose);
 
+        SharedData.hasAutonomousRun = false;
+        SharedData.lastKnownPose    = null;
+
         launcher.closeLatch();
         launcher.setHoodRetracted();
         intakeTransfer.setIdle();
+        shootSeqState = ShootSeqState.IDLE;
+        tagWasVisible = false;
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -112,14 +118,21 @@ public class RedAutoFarSidePathingTest extends OpMode {
     @Override
     public void loop() {
         follower.update();
+
+        Pose currentPose = follower.getPose();
+        distanceToGoal = turret.calculateDistanceToGoal(
+                currentPose.getX(), currentPose.getY());
+        launcher.update(distanceToGoal);
+
         updateTurretAim();
         autonomousPathUpdate();
         updateShootSequence();
 
         panelsTelemetry.debug("Path State",     pathState);
         panelsTelemetry.debug("Shoot Seq",      shootSeqState);
-        panelsTelemetry.debug("X",              follower.getPose().getX());
-        panelsTelemetry.debug("Y",              follower.getPose().getY());
+        panelsTelemetry.debug("X",              currentPose.getX());
+        panelsTelemetry.debug("Y",              currentPose.getY());
+        panelsTelemetry.debug("Distance",       distanceToGoal);
         panelsTelemetry.debug("Ball Count",     intakeTransfer.getBallCount());
         panelsTelemetry.debug("Flywheel Ready", launcher.isFlywheelReady());
         panelsTelemetry.debug("Tag Visible",    tagWasVisible);
@@ -129,6 +142,7 @@ public class RedAutoFarSidePathingTest extends OpMode {
     @Override
     public void stop() {
         launcher.stopFlywheel();
+        launcher.setBurstMode(false);
         launcher.closeLatch();
         intakeTransfer.setIdle();
         limelight.stop();
@@ -137,26 +151,25 @@ public class RedAutoFarSidePathingTest extends OpMode {
         SharedData.hasAutonomousRun = true;
     }
 
-    // ── Path state machine ────────────────────────────────────
-
     private void autonomousPathUpdate() {
         switch (pathState) {
 
-            case 0: // Shoot preload
+            case 0:
                 prepareShooter();
                 setPathState(1);
                 break;
 
             case 1:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(2);
                 }
                 break;
 
-            case 2: // Shoot done, drive to intake curve with intake running
+            case 2:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -166,10 +179,10 @@ public class RedAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 3: // Intaking at curve, spin up on way back
+            case 3:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIntaking(); // keep pivot down while driving back
+                    intakeTransfer.setIntaking();
                     follower.followPath(toShootCurve, true);
                     setPathState(4);
                 }
@@ -177,14 +190,15 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
             case 4:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(5);
                 }
                 break;
 
-            case 5: // Shoot done, drive to intake line with intake running
+            case 5:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -194,7 +208,7 @@ public class RedAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 6: // Intaking at line, spin up on way back
+            case 6:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIntaking();
@@ -205,7 +219,8 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
             case 7:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(8);
@@ -233,7 +248,8 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
             case 10:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(11);
@@ -261,14 +277,15 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
             case 13:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(14);
                 }
                 break;
 
-            case 14: // Done — park
+            case 14:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -279,8 +296,6 @@ public class RedAutoFarSidePathingTest extends OpMode {
         }
     }
 
-    // ── Turret ────────────────────────────────────────────────
-
     private void updateTurretAim() {
         Pose p   = follower.getPose();
         double x = p.getX();
@@ -288,7 +303,6 @@ public class RedAutoFarSidePathingTest extends OpMode {
         double h = Math.toDegrees(p.getHeading());
 
         LLResultTypes.FiducialResult tag = getTag();
-
         if (tagWasVisible && tag == null) tagWasVisible = false;
 
         if (!tagWasVisible) {
@@ -298,25 +312,32 @@ public class RedAutoFarSidePathingTest extends OpMode {
         } else {
             double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
             if (Math.abs(tx) > DEADBAND_DEG) {
-                turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
+                turret.setMotorPowerDirectly(
+                        clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
             } else {
                 turret.setMotorPowerDirectly(0);
-                turret.correctEncoderFromLimelight(turret.calculateAngleToGoal(x, y, h));
+                turret.correctEncoderFromLimelight(
+                        turret.calculateAngleToGoal(x, y, h));
             }
         }
     }
 
-    // ── Shoot sequence ────────────────────────────────────────
-
     private void startShootSequence() {
-        launcher.openLatch();
-        intakeTransfer.setIntaking();
-        shootSeqState = ShootSeqState.OPEN_LATCH;
+        launcher.setBurstMode(true);
+        shootSeqState = ShootSeqState.SPINUP;
         shootSeqTimer.resetTimer();
     }
 
     private void updateShootSequence() {
         switch (shootSeqState) {
+            case SPINUP:
+                if (launcher.isFlywheelReady()) {
+                    launcher.openLatch();
+                    intakeTransfer.setIntaking();
+                    shootSeqState = ShootSeqState.OPEN_LATCH;
+                    shootSeqTimer.resetTimer();
+                }
+                break;
             case OPEN_LATCH:
                 if (intakeTransfer.isFrontBeamClear()) {
                     shootSeqState = ShootSeqState.WAIT_BALL_GONE;
@@ -333,11 +354,11 @@ public class RedAutoFarSidePathingTest extends OpMode {
             case CLOSE_LATCH:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
-                        launcher.openLatch();
-                        shootSeqState = ShootSeqState.OPEN_LATCH;
+                        shootSeqState = ShootSeqState.SPINUP;
                         shootSeqTimer.resetTimer();
                     } else {
                         intakeTransfer.setIdle();
+                        launcher.setBurstMode(false);
                         shootSeqState = ShootSeqState.DONE;
                     }
                 }
@@ -349,13 +370,9 @@ public class RedAutoFarSidePathingTest extends OpMode {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────
-
     private void prepareShooter() {
-        Pose p = follower.getPose();
-        double distance = turret.calculateDistanceToGoal(p.getX(), p.getY());
-        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distance));
-        launcher.setHoodPosition(launcher.calculateHoodAngle(distance));
+        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distanceToGoal));
+        launcher.setHoodPosition(launcher.calculateHoodAngle(distanceToGoal));
     }
 
     private void stopShooter() {
@@ -370,10 +387,9 @@ public class RedAutoFarSidePathingTest extends OpMode {
             LLResult result = limelight.getLatestResult();
             if (result != null && result.isValid()) {
                 List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
-                if (tags != null) {
+                if (tags != null)
                     for (LLResultTypes.FiducialResult t : tags)
                         if (t.getFiducialId() == TARGET_TAG_ID) return t;
-                }
             }
         } catch (Exception e) { /* skip */ }
         return null;
@@ -388,29 +404,23 @@ public class RedAutoFarSidePathingTest extends OpMode {
         return Math.max(min, Math.min(max, v));
     }
 
-    // ── Paths ─────────────────────────────────────────────────
-
     private void buildPaths() {
         toIntakeCurve = follower.pathBuilder()
                 .addPath(new BezierCurve(startShootPose, controlPose1, postIntakePose1))
                 .setLinearHeadingInterpolation(startShootPose.getHeading(), postIntakePose1.getHeading())
                 .build();
-
         toShootCurve = follower.pathBuilder()
                 .addPath(new BezierCurve(postIntakePose1, controlPose1, startShootPose))
                 .setLinearHeadingInterpolation(postIntakePose1.getHeading(), startShootPose.getHeading())
                 .build();
-
         toIntakeLine = follower.pathBuilder()
                 .addPath(new BezierLine(startShootPose, postIntakePose2))
                 .setLinearHeadingInterpolation(startShootPose.getHeading(), postIntakePose2.getHeading())
                 .build();
-
         toShootLine = follower.pathBuilder()
                 .addPath(new BezierLine(postIntakePose2, startShootPose))
                 .setLinearHeadingInterpolation(postIntakePose2.getHeading(), startShootPose.getHeading())
                 .build();
-
         toPark = follower.pathBuilder()
                 .addPath(new BezierLine(startShootPose, parkPose))
                 .setLinearHeadingInterpolation(startShootPose.getHeading(), parkPose.getHeading())

@@ -13,24 +13,23 @@ public class Turret {
     private Telemetry telemetry;
 
     // ── Encoder constants ─────────────────────────────────────
-    private static final double TICKS_PER_TURRET_REV = 1253.0; // measured physically
+    private static final double TICKS_PER_TURRET_REV = 1253.0;
 
     // ── Soft limits ───────────────────────────────────────────
     private static final double MAX_ANGLE = 180.0;
     private static final double MIN_ANGLE = -178.0;
 
     // ── PID ───────────────────────────────────────────────────
-    private static final double kP        = 0.025;
+    private static final double kP        = 0.02;
     private static final double kI        = 0.0;
     private static final double kD        = 0.0;
     private static final double MAX_POWER = 0.50;
 
-    // Two-zone min power
-    private static final double MIN_POWER_FAR   = 0.1;  // error > FAR_THRESHOLD ticks
-    private static final double MIN_POWER_CLOSE = 0.08;  // error <= FAR_THRESHOLD ticks
-    private static final double FAR_THRESHOLD   = 100.0; // ticks
+    private static final double MIN_POWER_FAR   = 0.1;
+    private static final double MIN_POWER_CLOSE = 0.08;
+    private static final double FAR_THRESHOLD   = 100.0;
 
-    private static final int AT_TARGET_THRESHOLD = 8; // ticks deadband
+    private static final int AT_TARGET_THRESHOLD = 15;
 
     // ── Goal ──────────────────────────────────────────────────
     private double goalX = -72.0;
@@ -48,7 +47,9 @@ public class Turret {
         turretMotor = hardwareMap.get(DcMotorEx.class, "turret");
         turretMotor.setDirection(DcMotorSimple.Direction.REVERSE);
         turretMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        // No STOP_AND_RESET_ENCODER here — encoder persists across opmode
+        // transitions so turret position carries from auto into teleop correctly.
+        // Use resetEncoder() explicitly when a reset is actually needed.
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         pidTimer.reset();
     }
@@ -138,7 +139,7 @@ public class Turret {
         return angle > MAX_ANGLE - 10.0 || angle < MIN_ANGLE + 10.0;
     }
 
-    // ── Encoder reset ─────────────────────────────────────────
+    // ── Encoder reset (call explicitly — never from constructor) ──
     public void resetEncoder() {
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
@@ -159,15 +160,11 @@ public class Turret {
     private double ticksToAngle(int ticks) {
         return -(ticks / TICKS_PER_TURRET_REV) * 360.0;
     }
+
     public void correctEncoderFromLimelight(double trueAngleDegrees) {
-        // Called when limelight confirms turret is locked on goal
-        // Resets encoder to match the known true angle
-        int correctTicks = (int) angleToTicks(trueAngleDegrees);
-        // We can't reset to arbitrary value easily, so we just update target
-        // and force the internal state to match
         targetAngleDegrees = trueAngleDegrees;
-        lastError = 0;
-        integralSum = 0;
+        lastError          = 0;
+        integralSum        = 0;
     }
 
     // ── Getters ───────────────────────────────────────────────

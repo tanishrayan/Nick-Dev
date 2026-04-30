@@ -32,11 +32,6 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private Timer            pathTimer, opmodeTimer;
     private int              pathState;
 
-    // ── Fixed shooter values ───────────────────────────────────
-    private static final double FIXED_RPM        = 1700.0;
-    private static final double FIXED_HOOD       = 0.6;
-    private static final double FIXED_TURRET_DEG = -45.6;
-
     private Drivetrain        drivetrain;
     private IntakeAndTransfer intakeTransfer;
     private Launcher          launcher;
@@ -44,7 +39,6 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private Limelight3A       limelight;
 
     // ── Timing constants ──────────────────────────────────────
-    private static final double SPINUP_TIMEOUT_SEC   = 3.0;
     private static final double BALL_CLEAR_WAIT_SEC  = 0.5;
     private static final double CLOSE_LATCH_WAIT_SEC = 0.35;
     private static final double GATE_INTAKE_SEC      = 1.0;
@@ -58,7 +52,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private boolean tagWasVisible = false;
 
     // ── Shoot sequence ─────────────────────────────────────────
-    private enum ShootSeqState { IDLE, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
+    private enum ShootSeqState { IDLE, SPINUP, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
     private ShootSeqState shootSeqState = ShootSeqState.IDLE;
     private Timer         shootSeqTimer = new Timer();
 
@@ -67,12 +61,12 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private static final double GOAL_Y = -72.0;
 
     // ── Waypoints ─────────────────────────────────────────────
-    private final Pose startPose       = new Pose(35.3,  -62.1, Math.toRadians(0)); //-35.3, +62.1
+    private final Pose startPose       = new Pose(35.3,  -62.1, Math.toRadians(0));
     private final Pose shootPose1      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose controlPose1    = new Pose(14.3,   14.9, Math.toRadians(0));
     private final Pose postIntakePose1 = new Pose(62.0,    7.9, Math.toRadians(0));
     private final Pose shootPose2      = new Pose(13.3,  -12.1, Math.toRadians(0));
-    private final Pose gateOpener      = new Pose(60.2 ,   10.5, Math.toRadians(-45.5));
+    private final Pose gateOpener      = new Pose(60.2,   10.5, Math.toRadians(-45.5));
     private final Pose shootPose3      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose shootPose4      = new Pose(13.3,  -12.1, Math.toRadians(0));
     private final Pose postIntakePose2 = new Pose(52.5,  -16.1, Math.toRadians(0));
@@ -83,6 +77,9 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     private PathChain toShoot1, toIntake1, toShoot2;
     private PathChain openGate1, toShoot3, openGate2, toShoot4;
     private PathChain toIntake2, toShoot5, toPark;
+
+    // ── Distance cache ─────────────────────────────────────────
+    private double distanceToGoal = 0.0;
 
     @Override
     public void init() {
@@ -102,14 +99,20 @@ public class BlueAutoNearSidePathingTest extends OpMode {
         limelight.start();
 
         turret.setGoalPosition(GOAL_X, GOAL_Y);
+        turret.resetEncoder(); // explicit reset at auto start
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
         follower.setStartingPose(startPose);
 
+        SharedData.hasAutonomousRun = false;
+        SharedData.lastKnownPose    = null;
+
         launcher.closeLatch();
         launcher.setHoodRetracted();
         intakeTransfer.setIdle();
+        shootSeqState = ShootSeqState.IDLE;
+        tagWasVisible = false;
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -124,14 +127,21 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     @Override
     public void loop() {
         follower.update();
+
+        Pose currentPose = follower.getPose();
+        distanceToGoal = turret.calculateDistanceToGoal(
+                currentPose.getX(), currentPose.getY());
+        launcher.update(distanceToGoal);
+
         updateTurretAim();
         autonomousPathUpdate();
         updateShootSequence();
 
         panelsTelemetry.debug("Path State",     pathState);
         panelsTelemetry.debug("Shoot Seq",      shootSeqState);
-        panelsTelemetry.debug("X",              follower.getPose().getX());
-        panelsTelemetry.debug("Y",              follower.getPose().getY());
+        panelsTelemetry.debug("X",              currentPose.getX());
+        panelsTelemetry.debug("Y",              currentPose.getY());
+        panelsTelemetry.debug("Distance",       distanceToGoal);
         panelsTelemetry.debug("Ball Count",     intakeTransfer.getBallCount());
         panelsTelemetry.debug("Flywheel Ready", launcher.isFlywheelReady());
         panelsTelemetry.debug("Tag Visible",    tagWasVisible);
@@ -141,6 +151,7 @@ public class BlueAutoNearSidePathingTest extends OpMode {
     @Override
     public void stop() {
         launcher.stopFlywheel();
+        launcher.setBurstMode(false);
         launcher.closeLatch();
         intakeTransfer.setIdle();
         limelight.stop();
@@ -149,148 +160,149 @@ public class BlueAutoNearSidePathingTest extends OpMode {
         SharedData.hasAutonomousRun = true;
     }
 
-    // ── Path state machine ────────────────────────────────────
-
     private void autonomousPathUpdate() {
         switch (pathState) {
 
-            case 0: // Drive to shoot 1, spin up immediately
+            case 0:
                 follower.followPath(toShoot1);
                 prepareShooter();
                 setPathState(1);
                 break;
 
-            case 1: // Spin up every loop, shoot when arrived + ready
+            case 1:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     startShootSequence();
                     setPathState(2);
                 }
                 break;
 
-            case 2: // Wait shoot done, start intake, drive to intake 1
+            case 2:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
-                    intakeTransfer.setIntaking(); // intake on the way
+                    intakeTransfer.setIntaking();
                     follower.followPath(toIntake1, true);
                     setPathState(3);
                 }
                 break;
 
-            case 3: // Driving to intake 1 with intake running, spin up on the way back
+            case 3:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIntaking(); // keep intake running and pivot down while driving back
+                    intakeTransfer.setIntaking();
                     follower.followPath(toShoot2, true);
                     setPathState(4);
                 }
                 break;
 
-            case 4: // Spin up every loop, shoot when arrived + ready
+            case 4:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
-                    intakeTransfer.setIdle(); // now safe to retract
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(5);
                 }
                 break;
 
-            case 5: // Wait shoot done, start intake, drive to gate 1 with intake running
+            case 5:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
-                    intakeTransfer.setIntaking(); // intake running while driving to gate
+                    intakeTransfer.setIntaking();
                     follower.followPath(openGate1, true);
                     setPathState(6);
                 }
                 break;
 
-            case 6: // Arrived at gate 1 — intake already running, just wait
-                if (!follower.isBusy()) {
-                    setPathState(7);
-                }
+            case 6:
+                if (!follower.isBusy()) setPathState(7);
                 break;
 
-            case 7: // Dwell at gate 1 with intake running, spin up while waiting
+            case 7:
                 prepareShooter();
-                if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC || intakeTransfer.isFullyLoaded()) {
+                if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC
+                        || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIdle();
                     follower.followPath(toShoot3, true);
                     setPathState(8);
                 }
                 break;
 
-            case 8: // Spin up every loop, shoot when arrived + ready
+            case 8:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     startShootSequence();
                     setPathState(9);
                 }
                 break;
 
-            case 9: // Wait shoot done, start intake, drive to gate 2 with intake running
+            case 9:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
-                    intakeTransfer.setIntaking(); // intake running while driving to gate
+                    intakeTransfer.setIntaking();
                     follower.followPath(openGate2, true);
                     setPathState(10);
                 }
                 break;
 
-            case 10: // Arrived at gate 2 — intake already running, just wait
-                if (!follower.isBusy()) {
-                    setPathState(11);
-                }
+            case 10:
+                if (!follower.isBusy()) setPathState(11);
                 break;
 
-            case 11: // Dwell at gate 2 with intake running, spin up while waiting
+            case 11:
                 prepareShooter();
-                if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC || intakeTransfer.isFullyLoaded()) {
+                if (pathTimer.getElapsedTimeSeconds() >= GATE_INTAKE_SEC
+                        || intakeTransfer.isFullyLoaded()) {
                     intakeTransfer.setIdle();
                     follower.followPath(toShoot4, true);
                     setPathState(12);
                 }
                 break;
 
-            case 12: // Spin up every loop, shoot when arrived + ready
+            case 12:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     startShootSequence();
                     setPathState(13);
                 }
                 break;
 
-            case 13: // Wait shoot done, start intake, drive to intake 2 with intake running
+            case 13:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
-                    intakeTransfer.setIntaking(); // intake on the way
+                    intakeTransfer.setIntaking();
                     follower.followPath(toIntake2, true);
                     setPathState(14);
                 }
                 break;
 
-            case 14: // Driving to intake 2 with intake running, spin up on the way back
+            case 14:
                 prepareShooter();
                 if (!follower.isBusy() || intakeTransfer.isFullyLoaded()) {
-                    intakeTransfer.setIntaking(); // keep intake running and pivot down while driving back
+                    intakeTransfer.setIntaking();
                     follower.followPath(toShoot5, true);
-                    setPathState(4);
+                    setPathState(15);
                 }
                 break;
 
-            case 15: // Spin up every loop, shoot when arrived + ready
+            case 15:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE) {
-                    intakeTransfer.setIdle(); // now safe to retract
+                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
+                    intakeTransfer.setIdle();
                     startShootSequence();
-                    setPathState(5);
+                    setPathState(16);
                 }
                 break;
 
-            case 16: // Wait shoot done, park
+            case 16:
                 if (shootSeqState == ShootSeqState.DONE) {
                     shootSeqState = ShootSeqState.IDLE;
                     stopShooter();
@@ -299,15 +311,11 @@ public class BlueAutoNearSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 17: // Wait to park
-                if (!follower.isBusy()) {
-                    setPathState(-1);
-                }
+            case 17:
+                if (!follower.isBusy()) setPathState(-1);
                 break;
         }
     }
-
-    // ── Turret — limelight fine, odometry coarse ──────────────
 
     private void updateTurretAim() {
         Pose p   = follower.getPose();
@@ -316,47 +324,47 @@ public class BlueAutoNearSidePathingTest extends OpMode {
         double h = Math.toDegrees(p.getHeading());
 
         LLResultTypes.FiducialResult tag = getTag();
-
-        if (tagWasVisible && tag == null) {
-            tagWasVisible = false;
-        }
+        if (tagWasVisible && tag == null) tagWasVisible = false;
 
         if (!tagWasVisible) {
             turret.aimAtGoal(x, y, h);
             turret.update();
-            if (turret.isAtTarget() && tag != null) {
-                tagWasVisible = true;
-            }
+            if (turret.isAtTarget() && tag != null) tagWasVisible = true;
         } else {
             double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
             if (Math.abs(tx) > DEADBAND_DEG) {
-                turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
+                turret.setMotorPowerDirectly(
+                        clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
             } else {
                 turret.setMotorPowerDirectly(0);
-                turret.correctEncoderFromLimelight(turret.calculateAngleToGoal(x, y, h));
+                turret.correctEncoderFromLimelight(
+                        turret.calculateAngleToGoal(x, y, h));
             }
         }
     }
 
-    // ── Shoot sequence ────────────────────────────────────────
-
     private void startShootSequence() {
-        // Flywheel already running from prepareShooter() — skip spinup, open immediately
-        launcher.openLatch();
-        intakeTransfer.setIntaking();
-        shootSeqState = ShootSeqState.OPEN_LATCH;
+        launcher.setBurstMode(true);
+        shootSeqState = ShootSeqState.SPINUP;
         shootSeqTimer.resetTimer();
     }
 
     private void updateShootSequence() {
         switch (shootSeqState) {
+            case SPINUP:
+                if (launcher.isFlywheelReady()) {
+                    launcher.openLatch();
+                    intakeTransfer.setIntaking();
+                    shootSeqState = ShootSeqState.OPEN_LATCH;
+                    shootSeqTimer.resetTimer();
+                }
+                break;
             case OPEN_LATCH:
                 if (intakeTransfer.isFrontBeamClear()) {
                     shootSeqState = ShootSeqState.WAIT_BALL_GONE;
                     shootSeqTimer.resetTimer();
                 }
                 break;
-
             case WAIT_BALL_GONE:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= BALL_CLEAR_WAIT_SEC) {
                     launcher.closeLatch();
@@ -364,20 +372,18 @@ public class BlueAutoNearSidePathingTest extends OpMode {
                     shootSeqTimer.resetTimer();
                 }
                 break;
-
             case CLOSE_LATCH:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
-                        launcher.openLatch();
-                        shootSeqState = ShootSeqState.OPEN_LATCH;
+                        shootSeqState = ShootSeqState.SPINUP;
                         shootSeqTimer.resetTimer();
                     } else {
                         intakeTransfer.setIdle();
+                        launcher.setBurstMode(false);
                         shootSeqState = ShootSeqState.DONE;
                     }
                 }
                 break;
-
             case IDLE:
             case DONE:
             default:
@@ -385,13 +391,9 @@ public class BlueAutoNearSidePathingTest extends OpMode {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────
-
     private void prepareShooter() {
-        Pose p = follower.getPose();
-        double distance = turret.calculateDistanceToGoal(p.getX(), p.getY());
-        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distance));
-        launcher.setHoodPosition(launcher.calculateHoodAngle(distance));
+        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distanceToGoal));
+        launcher.setHoodPosition(launcher.calculateHoodAngle(distanceToGoal));
     }
 
     private void stopShooter() {
@@ -406,10 +408,9 @@ public class BlueAutoNearSidePathingTest extends OpMode {
             LLResult result = limelight.getLatestResult();
             if (result != null && result.isValid()) {
                 List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
-                if (tags != null) {
+                if (tags != null)
                     for (LLResultTypes.FiducialResult t : tags)
                         if (t.getFiducialId() == TARGET_TAG_ID) return t;
-                }
             }
         } catch (Exception e) { /* skip */ }
         return null;
@@ -424,54 +425,43 @@ public class BlueAutoNearSidePathingTest extends OpMode {
         return Math.max(min, Math.min(max, v));
     }
 
-    // ── Paths ─────────────────────────────────────────────────
-
     private void buildPaths() {
         toShoot1 = follower.pathBuilder()
                 .addPath(new BezierLine(startPose, shootPose1))
                 .setLinearHeadingInterpolation(startPose.getHeading(), shootPose1.getHeading())
                 .build();
-
         toIntake1 = follower.pathBuilder()
                 .addPath(new BezierCurve(shootPose1, controlPose1, postIntakePose1))
                 .setLinearHeadingInterpolation(shootPose1.getHeading(), postIntakePose1.getHeading())
                 .build();
-
         toShoot2 = follower.pathBuilder()
                 .addPath(new BezierCurve(postIntakePose1, controlPose1, shootPose2))
                 .setLinearHeadingInterpolation(postIntakePose1.getHeading(), shootPose2.getHeading())
                 .build();
-
         openGate1 = follower.pathBuilder()
                 .addPath(new BezierCurve(shootPose2, controlPose1, gateOpener))
                 .setLinearHeadingInterpolation(shootPose2.getHeading(), gateOpener.getHeading())
                 .build();
-
         toShoot3 = follower.pathBuilder()
                 .addPath(new BezierCurve(gateOpener, controlPose1, shootPose3))
                 .setLinearHeadingInterpolation(gateOpener.getHeading(), shootPose3.getHeading())
                 .build();
-
         openGate2 = follower.pathBuilder()
                 .addPath(new BezierCurve(shootPose3, controlPose1, gateOpener))
                 .setLinearHeadingInterpolation(shootPose3.getHeading(), gateOpener.getHeading())
                 .build();
-
         toShoot4 = follower.pathBuilder()
                 .addPath(new BezierCurve(gateOpener, controlPose1, shootPose4))
                 .setLinearHeadingInterpolation(gateOpener.getHeading(), shootPose4.getHeading())
                 .build();
-
         toIntake2 = follower.pathBuilder()
                 .addPath(new BezierLine(shootPose4, postIntakePose2))
                 .setLinearHeadingInterpolation(shootPose4.getHeading(), postIntakePose2.getHeading())
                 .build();
-
         toShoot5 = follower.pathBuilder()
                 .addPath(new BezierLine(postIntakePose2, shootPose5))
                 .setLinearHeadingInterpolation(postIntakePose2.getHeading(), shootPose5.getHeading())
                 .build();
-
         toPark = follower.pathBuilder()
                 .addPath(new BezierLine(shootPose5, parkPose))
                 .setLinearHeadingInterpolation(shootPose5.getHeading(), parkPose.getHeading())

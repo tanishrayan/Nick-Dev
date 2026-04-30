@@ -51,7 +51,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     private boolean tagWasVisible = false;
 
     // ── Shoot sequence ─────────────────────────────────────────
-    private enum ShootSeqState { IDLE, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
+    private enum ShootSeqState { IDLE, SPINUP, OPEN_LATCH, WAIT_BALL_GONE, CLOSE_LATCH, DONE }
     private ShootSeqState shootSeqState = ShootSeqState.IDLE;
     private Timer         shootSeqTimer = new Timer();
 
@@ -68,6 +68,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
 
     // ── Path chains ───────────────────────────────────────────
     private PathChain toIntakeCurve, toShootCurve, toIntakeLine, toShootLine, toPark;
+
+    // ── Distance cache (updated every loop) ───────────────────
+    private double distanceToGoal = 0.0;
 
     @Override
     public void init() {
@@ -117,23 +120,34 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     @Override
     public void loop() {
         follower.update();
+
+        // ── Distance + launcher update (every loop) ────────────
+        // Must run before autonomousPathUpdate so isFlywheelReady()
+        // reflects the current effectiveVelocity including burst offset.
+        Pose currentPose = follower.getPose();
+        distanceToGoal = turret.calculateDistanceToGoal(
+                currentPose.getX(), currentPose.getY());
+        launcher.update(distanceToGoal);
+
         updateTurretAim();
         autonomousPathUpdate();
         updateShootSequence();
 
-        panelsTelemetry.debug("Path State",     pathState);
-        panelsTelemetry.debug("Shoot Seq",      shootSeqState);
-        panelsTelemetry.debug("X",              follower.getPose().getX());
-        panelsTelemetry.debug("Y",              follower.getPose().getY());
-        panelsTelemetry.debug("Ball Count",     intakeTransfer.getBallCount());
-        panelsTelemetry.debug("Flywheel Ready", launcher.isFlywheelReady());
-        panelsTelemetry.debug("Tag Visible",    tagWasVisible);
+        panelsTelemetry.debug("Path State",      pathState);
+        panelsTelemetry.debug("Shoot Seq",       shootSeqState);
+        panelsTelemetry.debug("X",               currentPose.getX());
+        panelsTelemetry.debug("Y",               currentPose.getY());
+        panelsTelemetry.debug("Distance",        distanceToGoal);
+        panelsTelemetry.debug("Ball Count",      intakeTransfer.getBallCount());
+        panelsTelemetry.debug("Flywheel Ready",  launcher.isFlywheelReady());
+        panelsTelemetry.debug("Tag Visible",     tagWasVisible);
         panelsTelemetry.update(telemetry);
     }
 
     @Override
     public void stop() {
         launcher.stopFlywheel();
+        launcher.setBurstMode(false);
         launcher.closeLatch();
         intakeTransfer.setIdle();
         limelight.stop();
@@ -147,14 +161,16 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     private void autonomousPathUpdate() {
         switch (pathState) {
 
-            case 0: // Spin up preload shot
+            case 0: // Spin up for preload shot
                 prepareShooter();
                 setPathState(1);
                 break;
 
             case 1: // Wait for flywheel ready then shoot
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
+                if (!follower.isBusy()
+                        && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(2);
@@ -180,9 +196,11 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 4: // Wait for flywheel ready then shoot
+            case 4:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
+                if (!follower.isBusy()
+                        && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(5);
@@ -208,9 +226,11 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 7: // Wait for flywheel ready then shoot
+            case 7:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
+                if (!follower.isBusy()
+                        && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(8);
@@ -236,9 +256,11 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 10: // Wait for flywheel ready then shoot
+            case 10:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
+                if (!follower.isBusy()
+                        && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(11);
@@ -264,9 +286,11 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                 }
                 break;
 
-            case 13: // Wait for flywheel ready then shoot
+            case 13:
                 prepareShooter();
-                if (!follower.isBusy() && shootSeqState == ShootSeqState.IDLE && launcher.isFlywheelReady()) {
+                if (!follower.isBusy()
+                        && shootSeqState == ShootSeqState.IDLE
+                        && launcher.isFlywheelReady()) {
                     intakeTransfer.setIdle();
                     startShootSequence();
                     setPathState(14);
@@ -303,10 +327,12 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         } else {
             double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
             if (Math.abs(tx) > DEADBAND_DEG) {
-                turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
+                turret.setMotorPowerDirectly(
+                        clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
             } else {
                 turret.setMotorPowerDirectly(0);
-                turret.correctEncoderFromLimelight(turret.calculateAngleToGoal(x, y, h));
+                turret.correctEncoderFromLimelight(
+                        turret.calculateAngleToGoal(x, y, h));
             }
         }
     }
@@ -314,20 +340,34 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     // ── Shoot sequence ────────────────────────────────────────
 
     private void startShootSequence() {
-        launcher.openLatch();
-        intakeTransfer.setIntaking();
-        shootSeqState = ShootSeqState.OPEN_LATCH;
+        // Enable burst mode — launcher.update() will now chase
+        // effectiveVelocity = targetVelocity + burstOffset(distance).
+        // SPINUP waits until isFlywheelReady() confirms the higher speed
+        // is reached before opening latch.
+        launcher.setBurstMode(true);
+        shootSeqState = ShootSeqState.SPINUP;
         shootSeqTimer.resetTimer();
     }
 
     private void updateShootSequence() {
         switch (shootSeqState) {
+            case SPINUP:
+                // Wait for flywheel to reach effectiveVelocity (includes burst offset).
+                if (launcher.isFlywheelReady()) {
+                    launcher.openLatch();
+                    intakeTransfer.setIntaking();
+                    shootSeqState = ShootSeqState.OPEN_LATCH;
+                    shootSeqTimer.resetTimer();
+                }
+                break;
+
             case OPEN_LATCH:
                 if (intakeTransfer.isFrontBeamClear()) {
                     shootSeqState = ShootSeqState.WAIT_BALL_GONE;
                     shootSeqTimer.resetTimer();
                 }
                 break;
+
             case WAIT_BALL_GONE:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= BALL_CLEAR_WAIT_SEC) {
                     launcher.closeLatch();
@@ -335,18 +375,24 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                     shootSeqTimer.resetTimer();
                 }
                 break;
+
             case CLOSE_LATCH:
                 if (shootSeqTimer.getElapsedTimeSeconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
+                        // More balls — open latch for next ball.
+                        // Bang-bang + hood compensation continue between shots.
                         launcher.openLatch();
                         shootSeqState = ShootSeqState.OPEN_LATCH;
                         shootSeqTimer.resetTimer();
                     } else {
+                        // All balls fired — disable burst, return to normal.
                         intakeTransfer.setIdle();
+                        launcher.setBurstMode(false);
                         shootSeqState = ShootSeqState.DONE;
                     }
                 }
                 break;
+
             case IDLE:
             case DONE:
             default:
@@ -357,13 +403,13 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     // ── Helpers ───────────────────────────────────────────────
 
     private void prepareShooter() {
-        Pose p = follower.getPose();
-        double distance = turret.calculateDistanceToGoal(p.getX(), p.getY());
-        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distance));
-        launcher.setHoodPosition(launcher.calculateHoodAngle(distance));
+        // Uses cached distanceToGoal from loop() — no extra calculation needed.
+        launcher.setFlywheelVelocity(launcher.calculateFlywheelVelocity(distanceToGoal));
+        launcher.setHoodPosition(launcher.calculateHoodAngle(distanceToGoal));
     }
 
     private void stopShooter() {
+        // stopFlywheel() already calls setBurstMode(false) internally.
         launcher.stopFlywheel();
         turret.setToFacingFront();
         turret.setMotorPowerDirectly(0);
@@ -380,7 +426,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
                         if (t.getFiducialId() == TARGET_TAG_ID) return t;
                 }
             }
-        } catch (Exception e) { /* skip */ }
+        } catch (Exception e) { /* skip frame */ }
         return null;
     }
 
@@ -398,27 +444,32 @@ public class BlueAutoFarSidePathingTest extends OpMode {
     private void buildPaths() {
         toIntakeCurve = follower.pathBuilder()
                 .addPath(new BezierCurve(startShootPose, controlPose1, postIntakePose1))
-                .setLinearHeadingInterpolation(startShootPose.getHeading(), postIntakePose1.getHeading())
+                .setLinearHeadingInterpolation(
+                        startShootPose.getHeading(), postIntakePose1.getHeading())
                 .build();
 
         toShootCurve = follower.pathBuilder()
                 .addPath(new BezierCurve(postIntakePose1, controlPose1, startShootPose))
-                .setLinearHeadingInterpolation(postIntakePose1.getHeading(), startShootPose.getHeading())
+                .setLinearHeadingInterpolation(
+                        postIntakePose1.getHeading(), startShootPose.getHeading())
                 .build();
 
         toIntakeLine = follower.pathBuilder()
                 .addPath(new BezierLine(startShootPose, postIntakePose2))
-                .setLinearHeadingInterpolation(startShootPose.getHeading(), postIntakePose2.getHeading())
+                .setLinearHeadingInterpolation(
+                        startShootPose.getHeading(), postIntakePose2.getHeading())
                 .build();
 
         toShootLine = follower.pathBuilder()
                 .addPath(new BezierLine(postIntakePose2, startShootPose))
-                .setLinearHeadingInterpolation(postIntakePose2.getHeading(), startShootPose.getHeading())
+                .setLinearHeadingInterpolation(
+                        postIntakePose2.getHeading(), startShootPose.getHeading())
                 .build();
 
         toPark = follower.pathBuilder()
                 .addPath(new BezierLine(startShootPose, parkPose))
-                .setLinearHeadingInterpolation(startShootPose.getHeading(), parkPose.getHeading())
+                .setLinearHeadingInterpolation(
+                        startShootPose.getHeading(), parkPose.getHeading())
                 .build();
     }
 }

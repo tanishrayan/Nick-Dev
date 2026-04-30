@@ -97,18 +97,29 @@ public class BlueSideTele extends OpMode {
         limelight.pipelineSwitch(0);
         limelight.start();
 
-        if (SharedData.hasAutonomousRun && SharedData.lastKnownPose != null) {
-            drivetrain.setPose(SharedData.lastKnownPose);
-        } else {
-            drivetrain.setPose(new Pose(0, 0, 0));
-        }
+        // Pose is set in start() not here — Drivetrain constructor calls
+        // odo.resetPosAndIMU() which would wipe any pose set during init().
+        // start() runs after all hardware is fully settled.
 
         turret.setGoalPosition(GOAL_X, GOAL_Y);
         launcher.setHoodPosition(currentHoodPosition);
         launcher.closeLatch();
 
-        telemetry.addLine("Ready.");
+        telemetry.addLine("Ready — waiting for start.");
+        telemetry.addData("hasAutoRun", SharedData.hasAutonomousRun);
+        telemetry.addData("savedPose",  SharedData.lastKnownPose);
         telemetry.update();
+    }
+
+    @Override
+    public void start() {
+        // Set pose here — after hardware has fully initialized and
+        // odo.resetPosAndIMU() from Drivetrain constructor has completed.
+        if (SharedData.hasAutonomousRun && SharedData.lastKnownPose != null) {
+            drivetrain.setPose(SharedData.lastKnownPose);
+        } else {
+            drivetrain.setPose(new Pose(0, 0, 0));
+        }
     }
 
     @Override
@@ -117,7 +128,6 @@ public class BlueSideTele extends OpMode {
         drivetrain.handleDrivetrain(gamepad1);
 
         // ── Full reset (GP1 cross) ────────────────────────────
-        // Burst is fully automatic inside shoot sequence — cross stays as reset.
         if (gamepad1.cross) {
             drivetrain.resetIMU();
             drivetrain.resetPosition();
@@ -147,9 +157,6 @@ public class BlueSideTele extends OpMode {
         }
 
         // ── Bang-bang update (must run every loop) ─────────────
-        // Handles all motor power. Automatically applies burst offset when
-        // burst mode is active. Burst is enabled in startShootSequence()
-        // and disabled when sequence reaches IDLE or is aborted.
         launcher.update(distanceToGoal);
 
         // ── Auto-aim toggle (GP1 options) ─────────────────────
@@ -197,7 +204,8 @@ public class BlueSideTele extends OpMode {
             } else {
                 double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
                 if (Math.abs(tx) > DEADBAND_DEG) {
-                    turret.setMotorPowerDirectly(clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
+                    turret.setMotorPowerDirectly(
+                            clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
                 } else {
                     turret.setMotorPowerDirectly(0);
                     turret.correctEncoderFromLimelight(
@@ -269,7 +277,7 @@ public class BlueSideTele extends OpMode {
         if (gamepad1.left_bumper && shootState != ShootState.IDLE) {
             launcher.closeLatch();
             launcher.stopFlywheel();
-            launcher.setBurstMode(false); // clean up burst on abort
+            launcher.setBurstMode(false);
             shooterRunning = false;
             intakeTransfer.setIdle();
             shootState = ShootState.IDLE;
@@ -277,6 +285,10 @@ public class BlueSideTele extends OpMode {
         updateShootSequence();
 
         // ── Telemetry ──────────────────────────────────────────
+        telemetry.addLine("=== DEBUG ===");
+        telemetry.addData("Pose X",    "%.1f in", robotX);
+        telemetry.addData("Pose Y",    "%.1f in", robotY);
+        telemetry.addData("Distance",  "%.1f in", distanceToGoal);
         telemetry.addLine("=== MODE ===");
         telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED" : "MANUAL");
         telemetry.addData("Aim Mode",    tagWasVisible  ? "LIMELIGHT" : "ODOMETRY");
@@ -288,7 +300,6 @@ public class BlueSideTele extends OpMode {
         telemetry.addLine();
         telemetry.addLine("=== LAUNCHER ===");
         launcher.updateTelemetry();
-        telemetry.addData("Distance", "%.1f in", distanceToGoal);
         telemetry.addLine();
         telemetry.addLine("=== TURRET ===");
         turret.updateTelemetry();
@@ -326,9 +337,6 @@ public class BlueSideTele extends OpMode {
             launcher.setFlywheelVelocity(currentVelocity);
             shooterRunning = true;
         }
-        // Burst mode enabled here — launcher.update() will now chase
-        // effectiveVelocity = targetVelocity + burstOffset(distance).
-        // Burst stays active until all balls are fired or sequence is aborted.
         launcher.setBurstMode(true);
         shootState = ShootState.SPINUP;
         shootTimer.reset();
@@ -337,7 +345,6 @@ public class BlueSideTele extends OpMode {
     private void updateShootSequence() {
         switch (shootState) {
             case SPINUP:
-                // Waits for flywheel to reach effectiveVelocity (includes burst offset).
                 if (launcher.isFlywheelReady()) {
                     launcher.openLatch();
                     intakeTransfer.setIntaking();
@@ -361,13 +368,11 @@ public class BlueSideTele extends OpMode {
             case CLOSE_LATCH:
                 if (shootTimer.seconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
-                        // More balls remain — open latch for next ball.
-                        // Bang-bang continues recovering between shots with burst still active.
-                        launcher.openLatch();
-                        shootState = ShootState.OPEN_LATCH;
+                        // Go back to SPINUP — wait for flywheel to recover
+                        // before opening latch for next ball.
+                        shootState = ShootState.SPINUP;
                         shootTimer.reset();
                     } else {
-                        // All balls fired — disable burst and return to steady state.
                         intakeTransfer.setIdle();
                         launcher.stopFlywheel();
                         launcher.setBurstMode(false);
