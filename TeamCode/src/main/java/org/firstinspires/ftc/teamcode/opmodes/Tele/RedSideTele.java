@@ -8,12 +8,15 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.opmodes.SharedData;
-import org.firstinspires.ftc.teamcode.subsystems.Drivetrain;
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.subsystems.IntakeAndTransfer;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.subsystems.Turret;
 
+import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.PathChain;
 
 import java.util.List;
 
@@ -21,7 +24,7 @@ import java.util.List;
 public class RedSideTele extends OpMode {
 
     // ── Subsystems ─────────────────────────────────────────────
-    private Drivetrain        drivetrain;
+    private Follower          follower;
     private IntakeAndTransfer intakeTransfer;
     private Launcher          launcher;
     private Turret            turret;
@@ -31,16 +34,11 @@ public class RedSideTele extends OpMode {
     private static final double GOAL_X = 72.0;
     private static final double GOAL_Y = 72.0;
 
-    // ── Gate pose (GP1 square = hold to drive to gate) ────────
-    private static final double GATE_X       = 58.5;
-    private static final double GATE_Y       = -9;
-    private static final double GATE_HEADING = -32.5; // degrees
+    // ── Gate pose (GP1 square hold, red side) ─────────────────
+    private final Pose gateOpenerPose = new Pose(58.5, -9, Math.toRadians(-32.5));
 
-    // ── Drive-to-gate P controllers ───────────────────────────
-    private static final double GATE_kP_XY      = 0.04;
-    private static final double GATE_kP_HEADING = 0.015;
-    private static final double GATE_MAX_XY     = 0.5;
-    private static final double GATE_MAX_ROT    = 0.3;
+    // ── Stick deadband — prevents drift when sticks released ──
+    private static final double STICK_DEADBAND = 0.05;
 
     // ── Limelight constants (red side tag) ────────────────────
     private static final double kP_LIMELIGHT        = 0.03;
@@ -86,16 +84,20 @@ public class RedSideTele extends OpMode {
     private boolean circleWasPressed       = false;
     private boolean rightTriggerWasPressed = false;
     private boolean triangleWasPressed     = false;
+    private boolean squareWasPressed       = false;
     private boolean dpadLeftPressed        = false;
     private boolean dpadRightPressed       = false;
     private boolean gp2TriangleWasPressed  = false;
+
+    // ── Gate state ─────────────────────────────────────────────
+    private boolean followingGate = false;
 
     // ── Distance cache ─────────────────────────────────────────
     private double distanceToGoal = 0.0;
 
     @Override
     public void init() {
-        drivetrain     = new Drivetrain(hardwareMap);
+        follower       = Constants.createFollower(hardwareMap);
         intakeTransfer = new IntakeAndTransfer(hardwareMap);
         launcher       = new Launcher(hardwareMap);
         turret         = new Turret(hardwareMap);
@@ -121,52 +123,61 @@ public class RedSideTele extends OpMode {
     @Override
     public void start() {
         if (SharedData.hasAutonomousRun && SharedData.lastKnownPose != null) {
-            drivetrain.setPose(SharedData.lastKnownPose);
+            follower.setStartingPose(SharedData.lastKnownPose);
         } else {
-            drivetrain.setPose(new Pose(0, 0, 0));
+            follower.setStartingPose(new Pose(0, 0, 0));
         }
+        follower.startTeleOpDrive(true); // field centric
     }
 
     @Override
     public void loop() {
 
-        // ── Gate drive (GP1 square hold) ──────────────────────
-        // While held, P-controller drives toward gate pose using
-        // drivetrain odometry directly. No Pedro needed.
-        if (gamepad1.square && shootState == ShootState.IDLE) {
-            double robotX       = drivetrain.getX();
-            double robotY       = drivetrain.getY();
-            double robotHeading = drivetrain.getHeading();
+        // ── Gate (GP1 square hold) ────────────────────────────
+        boolean squareNow = gamepad1.square && shootState == ShootState.IDLE;
 
-            double ex = GATE_X - robotX;
-            double ey = GATE_Y - robotY;
-            double eh = GATE_HEADING - robotHeading;
-            while (eh >  180) eh -= 360;
-            while (eh < -180) eh += 360;
+        if (squareNow && !squareWasPressed) {
+            Pose currentPose = follower.getPose();
+            PathChain toGate = follower.pathBuilder()
+                    .addPath(new BezierLine(currentPose, gateOpenerPose))
+                    .setLinearHeadingInterpolation(
+                            currentPose.getHeading(), gateOpenerPose.getHeading())
+                    .build();
+            follower.followPath(toGate, true);
+            followingGate = true;
+        }
+        if (!squareNow && squareWasPressed && followingGate) {
+            follower.startTeleOpDrive(true);
+            followingGate = false;
+        }
+        squareWasPressed = squareNow;
 
-            double forward = clamp(GATE_kP_XY * ey,      -GATE_MAX_XY,  GATE_MAX_XY);
-            double strafe  = clamp(GATE_kP_XY * ex,      -GATE_MAX_XY,  GATE_MAX_XY);
-            double rotate  = clamp(GATE_kP_HEADING * eh, -GATE_MAX_ROT, GATE_MAX_ROT);
+        // ── Pedro update (must run every loop) ────────────────
+        follower.update();
 
-            drivetrain.drive(forward, strafe, rotate);
-        } else {
-            drivetrain.handleDrivetrain(gamepad1);
+        // ── Drive input ────────────────────────────────────────
+        if (!followingGate) {
+            double forward = applyDeadband(-gamepad1.left_stick_y);
+            double strafe  = applyDeadband(-gamepad1.left_stick_x);
+            double rotate  = applyDeadband(gamepad1.right_stick_x) * 0.6;
+            follower.setTeleOpDrive(forward, strafe, rotate, true);
         }
 
         // ── Full reset (GP1 cross) ────────────────────────────
         if (gamepad1.cross) {
-            drivetrain.resetIMU();
-            drivetrain.resetPosition();
+            follower.setStartingPose(new Pose(0, 0, 0));
+            follower.startTeleOpDrive(true);
             turret.setToFacingFront();
             turret.resetEncoder();
             SharedData.hasAutonomousRun = false;
             autoAimEnabled = false;
             tagWasVisible  = false;
+            followingGate  = false;
         }
 
-        double robotX       = drivetrain.getX();
-        double robotY       = drivetrain.getY();
-        double robotHeading = drivetrain.getHeading();
+        double robotX       = follower.getPose().getX();
+        double robotY       = follower.getPose().getY();
+        double robotHeading = Math.toDegrees(follower.getPose().getHeading());
 
         // ── Distance → auto hood + velocity ───────────────────
         distanceToGoal    = turret.calculateDistanceToGoal(robotX, robotY);
@@ -315,7 +326,7 @@ public class RedSideTele extends OpMode {
         telemetry.addData("Pose X",      "%.1f in", robotX);
         telemetry.addData("Pose Y",      "%.1f in", robotY);
         telemetry.addData("Distance",    "%.1f in", distanceToGoal);
-        telemetry.addData("Gate Active", gamepad1.square ? "YES" : "NO");
+        telemetry.addData("Gate Active", followingGate ? "YES" : "NO");
         telemetry.addLine("=== MODE ===");
         telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED" : "MANUAL");
         telemetry.addData("Aim Mode",    tagWasVisible  ? "LIMELIGHT" : "ODOMETRY");
@@ -342,6 +353,10 @@ public class RedSideTele extends OpMode {
         telemetry.addLine("GP1 RB = shoot | GP1 LB = abort | GP1 Cross = reset");
         telemetry.addLine("GP1 Square (hold) = drive to gate");
         telemetry.update();
+    }
+
+    private double applyDeadband(double value) {
+        return Math.abs(value) < STICK_DEADBAND ? 0.0 : value;
     }
 
     private LLResultTypes.FiducialResult getTag() {

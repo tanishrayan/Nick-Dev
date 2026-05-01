@@ -204,7 +204,7 @@ public class Launcher {
         if (d <= 120) {
             return 0.116 * d * d - 13.35 * d + 1780.0;
         } else if (d <= 150) {
-            double velAt120 = 0.116 * 120 * 120 - 13.35 * 120 + 1750.0;
+            double velAt120 = 0.116 * 120 * 120 - 13.35 * 120 + 1830.0;
             double t = (d - 120.0) / (150.0 - 120.0);
             return velAt120 + t * (2200.0 - velAt120);
         } else {

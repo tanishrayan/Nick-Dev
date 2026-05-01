@@ -35,20 +35,24 @@ public class BlueSideTele extends OpMode {
     private static final double GOAL_Y = -72.0;
 
     // ── Gate pose (GP1 square hold) ───────────────────────────
-    private final Pose gateOpenerPose = new Pose(58.5, 10.5, Math.toRadians(-32.5));
+    private final Pose gateOpenerPose = new Pose(58.5, 9, Math.toRadians(-32.5));
 
     // ── Stick deadband — prevents drift when sticks released ──
     private static final double STICK_DEADBAND = 0.05;
 
     // ── Limelight constants ────────────────────────────────────
-    private static final double kP_LIMELIGHT        = 0.03;
+    private static final double kP_LIMELIGHT        = 0.015;
+    private static final double kD_LIMELIGHT        = 0.004;  // tune 0.006–0.008 if oscillation persists
+    private static final double LL_FILTER_ALPHA     = 0.35;   // lower = smoother; tune 0.25–0.5
     private static final double LL_MAX_SPEED        = 0.3;
     private static final double DEADBAND_DEG        = 1.0;
     private static final double MOUNTING_OFFSET_DEG = -1.0;
     private static final int    TARGET_TAG_ID       = 20;
 
     // ── Limelight state ────────────────────────────────────────
-    private boolean tagWasVisible = false;
+    private boolean tagWasVisible  = false;
+    private double  filteredTx     = 0.0;
+    private double  lastFilteredTx = 0.0;
 
     // ── Shooter state ──────────────────────────────────────────
     private double  currentVelocity     = 1700.0;
@@ -77,7 +81,14 @@ public class BlueSideTele extends OpMode {
     private static final double DIP_TOTAL_SEC = 0.65;
 
     // ── Turret ─────────────────────────────────────────────────
-    private static final double TURRET_INCREMENT = 5.0;
+    private static final double TURRET_INCREMENT    = 5.0;
+    private static final double MANUAL_TURRET_SPEED = 0.30;
+
+    // ── Manual turret override state ───────────────────────────
+    // GP1 dpad left/right: hold to rotate turret manually.
+    // On release, the current physical position becomes truth —
+    // fixes heading drift errors without needing a full reset.
+    private boolean manualOverride = false;
 
     // ── Edge detection ─────────────────────────────────────────
     private boolean optionsWasPressed      = false;
@@ -85,8 +96,8 @@ public class BlueSideTele extends OpMode {
     private boolean rightTriggerWasPressed = false;
     private boolean triangleWasPressed     = false;
     private boolean squareWasPressed       = false;
-    private boolean dpadLeftPressed        = false;
-    private boolean dpadRightPressed       = false;
+    private boolean dpadLeftPressed        = false;  // GP2
+    private boolean dpadRightPressed       = false;  // GP2
     private boolean gp2TriangleWasPressed  = false;
 
     // ── Gate state ─────────────────────────────────────────────
@@ -147,7 +158,7 @@ public class BlueSideTele extends OpMode {
             followingGate = true;
         }
         if (!squareNow && squareWasPressed && followingGate) {
-            follower.startTeleOpDrive(true); // restore field centric on release
+            follower.startTeleOpDrive(true);
             followingGate = false;
         }
         squareWasPressed = squareNow;
@@ -156,9 +167,6 @@ public class BlueSideTele extends OpMode {
         follower.update();
 
         // ── Drive input ────────────────────────────────────────
-        // Deadband applied before passing to Pedro to prevent drift
-        // when sticks are released. Pedro's internal momentum can
-        // cause slight movement from sub-threshold stick values.
         if (!followingGate) {
             double forward = applyDeadband(-gamepad1.left_stick_y);
             double strafe  = applyDeadband(-gamepad1.left_stick_x);
@@ -173,9 +181,12 @@ public class BlueSideTele extends OpMode {
             turret.setToFacingFront();
             turret.resetEncoder();
             SharedData.hasAutonomousRun = false;
-            autoAimEnabled = false;
-            tagWasVisible  = false;
-            followingGate  = false;
+            autoAimEnabled  = false;
+            tagWasVisible   = false;
+            followingGate   = false;
+            manualOverride  = false;
+            filteredTx      = 0.0;
+            lastFilteredTx  = 0.0;
         }
 
         double robotX       = follower.getPose().getX();
@@ -205,12 +216,14 @@ public class BlueSideTele extends OpMode {
             autoAimEnabled = !autoAimEnabled;
             if (!autoAimEnabled) {
                 turret.setMotorPowerDirectly(0);
-                tagWasVisible = false;
+                tagWasVisible  = false;
+                filteredTx     = 0.0;
+                lastFilteredTx = 0.0;
             }
         }
         optionsWasPressed = optionsNow;
 
-        // ── GP2 dpad — manual turret ──────────────────────────
+        // ── GP2 dpad — fine manual turret (incremental steps) ─
         if (gamepad2.dpad_left && !dpadLeftPressed)
             turret.setTurretAngle(turret.getCurrentAngle() - TURRET_INCREMENT);
         dpadLeftPressed = gamepad2.dpad_left;
@@ -227,33 +240,77 @@ public class BlueSideTele extends OpMode {
                 double tx = calTag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
                 double correctedAngle = turret.getCurrentAngle() + tx;
                 turret.correctEncoderFromLimelight(correctedAngle);
-                tagWasVisible = false;
+                tagWasVisible  = false;
+                filteredTx     = 0.0;
+                lastFilteredTx = 0.0;
             }
         }
         gp2TriangleWasPressed = gp2TriangleNow;
 
-        // ── Turret auto-aim or hold ───────────────────────────
-        if (autoAimEnabled) {
-            LLResultTypes.FiducialResult tag = getTag();
-            if (tagWasVisible && tag == null) tagWasVisible = false;
+        // ── GP1 dpad — manual turret override (always active) ─
+        // Hold left/right to physically rotate the turret.
+        // On release: current position becomes truth, resetting
+        // both the PID target and limelight filter so auto-aim
+        // resumes cleanly from wherever you pointed it.
+        boolean gp1DL = gamepad1.dpad_left;
+        boolean gp1DR = gamepad1.dpad_right;
 
-            if (!tagWasVisible) {
-                turret.aimAtGoal(robotX, robotY, robotHeading);
-                turret.update();
-                if (turret.isAtTarget() && tag != null) tagWasVisible = true;
-            } else {
-                double tx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
-                if (Math.abs(tx) > DEADBAND_DEG) {
-                    turret.setMotorPowerDirectly(
-                            clamp(kP_LIMELIGHT * tx, -LL_MAX_SPEED, LL_MAX_SPEED));
-                } else {
-                    turret.setMotorPowerDirectly(0);
-                    turret.correctEncoderFromLimelight(
-                            turret.calculateAngleToGoal(robotX, robotY, robotHeading));
-                }
-            }
+        if (gp1DL || gp1DR) {
+            manualOverride = true;
+            double power = gp1DL ? -MANUAL_TURRET_SPEED : MANUAL_TURRET_SPEED;
+            turret.setMotorPowerDirectly(power);
         } else {
-            turret.update();
+            if (manualOverride) {
+                // Released — physical position is now ground truth.
+                double trueAngle = turret.getCurrentAngle();
+                turret.setTurretAngle(trueAngle);
+                turret.correctEncoderFromLimelight(trueAngle);
+                filteredTx     = 0.0;
+                lastFilteredTx = 0.0;
+                tagWasVisible  = false;
+                manualOverride = false;
+            }
+
+            // ── Turret auto-aim or PID hold ───────────────────
+            if (autoAimEnabled) {
+                LLResultTypes.FiducialResult tag = getTag();
+                if (tagWasVisible && tag == null) tagWasVisible = false;
+
+                if (!tagWasVisible) {
+                    // Odometry phase: point at goal using field math
+                    turret.aimAtGoal(robotX, robotY, robotHeading);
+                    turret.update();
+                    if (turret.isAtTarget() && tag != null) tagWasVisible = true;
+                } else {
+                    // Limelight phase: fine-track with filtered tx + kD
+                    double rawTx = tag.getTargetXDegrees() + MOUNTING_OFFSET_DEG;
+
+                    // Low-pass filter kills frame-to-frame camera noise.
+                    // This is the root cause of jitter — raw tx fluctuates
+                    // every frame and drives the motor sign to flip rapidly.
+                    filteredTx = LL_FILTER_ALPHA * rawTx
+                            + (1.0 - LL_FILTER_ALPHA) * filteredTx;
+                    double dTx = filteredTx - lastFilteredTx;
+                    lastFilteredTx = filteredTx;
+
+                    if (Math.abs(filteredTx) > DEADBAND_DEG) {
+                        double power = (kP_LIMELIGHT * filteredTx)
+                                + (kD_LIMELIGHT * dTx);
+                        turret.setMotorPowerDirectly(
+                                clamp(power, -LL_MAX_SPEED, LL_MAX_SPEED));
+                    } else {
+                        // Centered on tag — physical position IS truth.
+                        // Use getCurrentAngle() (not odometry math) so we
+                        // don't re-inject drifted heading into the correction.
+                        turret.setMotorPowerDirectly(0);
+                        turret.correctEncoderFromLimelight(turret.getCurrentAngle());
+                        filteredTx     = 0.0;
+                        lastFilteredTx = 0.0;
+                    }
+                }
+            } else {
+                turret.update();
+            }
         }
 
         // ── Flywheel toggle (GP2 circle) ──────────────────────
@@ -326,15 +383,17 @@ public class BlueSideTele extends OpMode {
 
         // ── Telemetry ──────────────────────────────────────────
         telemetry.addLine("=== DEBUG ===");
-        telemetry.addData("Pose X",      "%.1f in", robotX);
-        telemetry.addData("Pose Y",      "%.1f in", robotY);
-        telemetry.addData("Distance",    "%.1f in", distanceToGoal);
-        telemetry.addData("Gate Active", followingGate ? "YES" : "NO");
+        telemetry.addData("Pose X",         "%.1f in", robotX);
+        telemetry.addData("Pose Y",         "%.1f in", robotY);
+        telemetry.addData("Distance",       "%.1f in", distanceToGoal);
+        telemetry.addData("Gate Active",    followingGate  ? "YES" : "NO");
+        telemetry.addData("Manual Override",manualOverride ? "YES" : "NO");
         telemetry.addLine("=== MODE ===");
-        telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED" : "MANUAL");
-        telemetry.addData("Aim Mode",    tagWasVisible  ? "LIMELIGHT" : "ODOMETRY");
-        telemetry.addData("Shoot State", shootState);
-        telemetry.addData("Dipping",     dipping ? "YES" : "NO");
+        telemetry.addData("Auto-Aim",       autoAimEnabled ? "ENABLED" : "MANUAL");
+        telemetry.addData("Aim Mode",       tagWasVisible  ? "LIMELIGHT" : "ODOMETRY");
+        telemetry.addData("Filtered Tx",    "%.2f°", filteredTx);
+        telemetry.addData("Shoot State",    shootState);
+        telemetry.addData("Dipping",        dipping ? "YES" : "NO");
         telemetry.addLine();
         telemetry.addLine("=== INTAKE ===");
         intakeTransfer.updateTelemetry();
@@ -351,10 +410,11 @@ public class BlueSideTele extends OpMode {
         telemetry.addData("Heading", "%.1f°",   robotHeading);
         telemetry.addLine();
         telemetry.addLine("=== CONTROLS ===");
-        telemetry.addLine("GP2 Dpad = manual turret | GP2 Triangle = LL recal");
+        telemetry.addLine("GP1 Dpad = manual turret (hold) | GP2 Dpad = fine step");
         telemetry.addLine("GP1 Options = auto-aim | GP2 Circle = flywheel");
         telemetry.addLine("GP1 RB = shoot | GP1 LB = abort | GP1 Cross = reset");
         telemetry.addLine("GP1 Square (hold) = drive to gate");
+        telemetry.addLine("GP2 Triangle = LL encoder recal");
         telemetry.update();
     }
 
