@@ -31,7 +31,7 @@ public class Launcher {
     // ── Burst offset ───────────────────────────────────────────
     // 50 ticks for close (≤120in), 200 ticks for far (≥150in), interpolated.
     private static final double BURST_OFFSET_CLOSE    = 0.0;
-    private static final double BURST_OFFSET_FAR      = 150.0;
+    private static final double BURST_OFFSET_FAR      = 50.0;
     private static final double BURST_CLOSE_THRESHOLD = 120.0;
     private static final double BURST_FAR_THRESHOLD   = 150.0;
 
@@ -202,9 +202,9 @@ public class Launcher {
      */
     public double calculateFlywheelVelocity(double d) {
         if (d <= 120) {
-            return 0.116 * d * d - 13.35 * d + 1848.0;
+            return 0.116 * d * d - 13.35 * d + 1780.0;
         } else if (d <= 150) {
-            double velAt120 = 0.116 * 120 * 120 - 13.35 * 120 + 1848.0;
+            double velAt120 = 0.116 * 120 * 120 - 13.35 * 120 + 1750.0;
             double t = (d - 120.0) / (150.0 - 120.0);
             return velAt120 + t * (2200.0 - velAt120);
         } else {
@@ -219,10 +219,10 @@ public class Launcher {
     public double calculateHoodAngle(double d) {
         double position;
         if (d <= 102) {
-            position = 0.669;
+            position = 0.69;
         } else if (d <= 119) {
             double t = (d - 102) / (119 - 102);
-            position = 0.669 + t * (0.32 - 0.669);
+            position = 0.73 + t * (0.32 - 0.669);
         } else if (d <= 140) {
             double t = (d - 119) / (140 - 119);
             position = 0.32 + t * (0.280 - 0.32);

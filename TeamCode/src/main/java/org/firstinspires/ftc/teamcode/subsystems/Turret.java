@@ -26,10 +26,10 @@ public class Turret {
     private static final double MAX_POWER = 0.50;
 
     private static final double MIN_POWER_FAR   = 0.1;
-    private static final double MIN_POWER_CLOSE = 0.08;
+    private static final double MIN_POWER_CLOSE = 0.12;
     private static final double FAR_THRESHOLD   = 100.0;
 
-    private static final int AT_TARGET_THRESHOLD = 15;
+    private static final int AT_TARGET_THRESHOLD = 8;
 
     // ── Goal ──────────────────────────────────────────────────
     private double goalX = -72.0;

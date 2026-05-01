@@ -94,7 +94,6 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
-        follower.setStartingPose(startShootPose);
 
         SharedData.hasAutonomousRun = false;
         SharedData.lastKnownPose    = null;
@@ -111,6 +110,7 @@ public class RedAutoFarSidePathingTest extends OpMode {
 
     @Override
     public void start() {
+        follower.setStartingPose(startShootPose); // set after hardware fully settled
         opmodeTimer.resetTimer();
         setPathState(0);
     }

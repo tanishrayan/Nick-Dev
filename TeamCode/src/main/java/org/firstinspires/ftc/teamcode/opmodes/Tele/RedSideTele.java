@@ -158,6 +158,7 @@ public class RedSideTele extends OpMode {
         // ── Bang-bang update (must run every loop) ─────────────
         launcher.update(distanceToGoal);
 
+
         // ── Auto-aim toggle (GP1 options) ─────────────────────
         boolean optionsNow = gamepad1.options;
         if (optionsNow && !optionsWasPressed) {

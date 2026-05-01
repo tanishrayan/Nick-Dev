@@ -95,8 +95,9 @@ public class BlueAutoFarSidePathingTest extends OpMode {
         follower = Constants.createFollower(hardwareMap);
         buildPaths();
 
-        follower.setStartingPose(startShootPose);
-        drivetrain.setPose(startShootPose);
+        // drivetrain.setPose omitted — follower.setStartingPose() handles the
+        // Pinpoint offset internally. Calling drivetrain.setPose() again
+        // interferes with Pedro's localization and causes near-zero readings.
 
         SharedData.hasAutonomousRun = false;
         SharedData.lastKnownPose    = null;
@@ -113,6 +114,7 @@ public class BlueAutoFarSidePathingTest extends OpMode {
 
     @Override
     public void start() {
+        follower.setStartingPose(startShootPose); // set after hardware fully settled
         opmodeTimer.resetTimer();
         setPathState(0);
     }
