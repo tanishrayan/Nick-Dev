@@ -31,12 +31,23 @@ public class RedSideTele extends OpMode {
     private static final double GOAL_X = 72.0;
     private static final double GOAL_Y = 72.0;
 
+    // ── Gate pose (GP1 square = hold to drive to gate) ────────
+    private static final double GATE_X       = 58.5;
+    private static final double GATE_Y       = -9;
+    private static final double GATE_HEADING = -32.5; // degrees
+
+    // ── Drive-to-gate P controllers ───────────────────────────
+    private static final double GATE_kP_XY      = 0.04;
+    private static final double GATE_kP_HEADING = 0.015;
+    private static final double GATE_MAX_XY     = 0.5;
+    private static final double GATE_MAX_ROT    = 0.3;
+
     // ── Limelight constants (red side tag) ────────────────────
     private static final double kP_LIMELIGHT        = 0.03;
     private static final double LL_MAX_SPEED        = 0.3;
     private static final double DEADBAND_DEG        = 1.0;
     private static final double MOUNTING_OFFSET_DEG = -1.0;
-    private static final int    TARGET_TAG_ID       = 24; // red goal tag
+    private static final int    TARGET_TAG_ID       = 24;
 
     // ── Limelight state ────────────────────────────────────────
     private boolean tagWasVisible = false;
@@ -97,9 +108,6 @@ public class RedSideTele extends OpMode {
         limelight.pipelineSwitch(0);
         limelight.start();
 
-        // Pose set in start() — Drivetrain constructor calls odo.resetPosAndIMU()
-        // which wipes any pose set during init(). start() runs after hardware settles.
-
         turret.setGoalPosition(GOAL_X, GOAL_Y);
         launcher.setHoodPosition(currentHoodPosition);
         launcher.closeLatch();
@@ -112,8 +120,6 @@ public class RedSideTele extends OpMode {
 
     @Override
     public void start() {
-        // Set pose here — after hardware has fully initialized and
-        // odo.resetPosAndIMU() from Drivetrain constructor has completed.
         if (SharedData.hasAutonomousRun && SharedData.lastKnownPose != null) {
             drivetrain.setPose(SharedData.lastKnownPose);
         } else {
@@ -124,7 +130,28 @@ public class RedSideTele extends OpMode {
     @Override
     public void loop() {
 
-        drivetrain.handleDrivetrain(gamepad1);
+        // ── Gate drive (GP1 square hold) ──────────────────────
+        // While held, P-controller drives toward gate pose using
+        // drivetrain odometry directly. No Pedro needed.
+        if (gamepad1.square && shootState == ShootState.IDLE) {
+            double robotX       = drivetrain.getX();
+            double robotY       = drivetrain.getY();
+            double robotHeading = drivetrain.getHeading();
+
+            double ex = GATE_X - robotX;
+            double ey = GATE_Y - robotY;
+            double eh = GATE_HEADING - robotHeading;
+            while (eh >  180) eh -= 360;
+            while (eh < -180) eh += 360;
+
+            double forward = clamp(GATE_kP_XY * ey,      -GATE_MAX_XY,  GATE_MAX_XY);
+            double strafe  = clamp(GATE_kP_XY * ex,      -GATE_MAX_XY,  GATE_MAX_XY);
+            double rotate  = clamp(GATE_kP_HEADING * eh, -GATE_MAX_ROT, GATE_MAX_ROT);
+
+            drivetrain.drive(forward, strafe, rotate);
+        } else {
+            drivetrain.handleDrivetrain(gamepad1);
+        }
 
         // ── Full reset (GP1 cross) ────────────────────────────
         if (gamepad1.cross) {
@@ -157,7 +184,6 @@ public class RedSideTele extends OpMode {
 
         // ── Bang-bang update (must run every loop) ─────────────
         launcher.update(distanceToGoal);
-
 
         // ── Auto-aim toggle (GP1 options) ─────────────────────
         boolean optionsNow = gamepad1.options;
@@ -286,9 +312,10 @@ public class RedSideTele extends OpMode {
 
         // ── Telemetry ──────────────────────────────────────────
         telemetry.addLine("=== DEBUG ===");
-        telemetry.addData("Pose X",   "%.1f in", robotX);
-        telemetry.addData("Pose Y",   "%.1f in", robotY);
-        telemetry.addData("Distance", "%.1f in", distanceToGoal);
+        telemetry.addData("Pose X",      "%.1f in", robotX);
+        telemetry.addData("Pose Y",      "%.1f in", robotY);
+        telemetry.addData("Distance",    "%.1f in", distanceToGoal);
+        telemetry.addData("Gate Active", gamepad1.square ? "YES" : "NO");
         telemetry.addLine("=== MODE ===");
         telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED" : "MANUAL");
         telemetry.addData("Aim Mode",    tagWasVisible  ? "LIMELIGHT" : "ODOMETRY");
@@ -313,25 +340,23 @@ public class RedSideTele extends OpMode {
         telemetry.addLine("GP2 Dpad = manual turret | GP2 Triangle = LL recal");
         telemetry.addLine("GP1 Options = auto-aim | GP2 Circle = flywheel");
         telemetry.addLine("GP1 RB = shoot | GP1 LB = abort | GP1 Cross = reset");
+        telemetry.addLine("GP1 Square (hold) = drive to gate");
         telemetry.update();
     }
 
-    // ── Limelight tag fetch ────────────────────────────────────
     private LLResultTypes.FiducialResult getTag() {
         try {
             LLResult result = limelight.getLatestResult();
             if (result != null && result.isValid()) {
                 List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
-                if (tags != null) {
+                if (tags != null)
                     for (LLResultTypes.FiducialResult t : tags)
                         if (t.getFiducialId() == TARGET_TAG_ID) return t;
-                }
             }
         } catch (Exception e) { /* skip frame */ }
         return null;
     }
 
-    // ── Shoot sequence ─────────────────────────────────────────
     private void startShootSequence() {
         if (!shooterRunning) {
             launcher.setFlywheelVelocity(currentVelocity);
@@ -368,8 +393,6 @@ public class RedSideTele extends OpMode {
             case CLOSE_LATCH:
                 if (shootTimer.seconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
-                        // Back to SPINUP — wait for flywheel to recover
-                        // before opening latch for next ball.
                         shootState = ShootState.SPINUP;
                         shootTimer.reset();
                     } else {
@@ -387,7 +410,6 @@ public class RedSideTele extends OpMode {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────
     private static double clamp(double v, double min, double max) {
         return Math.max(min, Math.min(max, v));
     }

@@ -8,12 +8,15 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.opmodes.SharedData;
-import org.firstinspires.ftc.teamcode.subsystems.Drivetrain;
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.subsystems.IntakeAndTransfer;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.subsystems.Turret;
 
+import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.PathChain;
 
 import java.util.List;
 
@@ -21,7 +24,7 @@ import java.util.List;
 public class BlueSideTele extends OpMode {
 
     // ── Subsystems ─────────────────────────────────────────────
-    private Drivetrain        drivetrain;
+    private Follower          follower;
     private IntakeAndTransfer intakeTransfer;
     private Launcher          launcher;
     private Turret            turret;
@@ -30,6 +33,12 @@ public class BlueSideTele extends OpMode {
     // ── Field coordinates ─────────────────────────────────────
     private static final double GOAL_X = 72.0;
     private static final double GOAL_Y = -72.0;
+
+    // ── Gate pose (GP1 square hold) ───────────────────────────
+    private final Pose gateOpenerPose = new Pose(58.5, 10.5, Math.toRadians(-32.5));
+
+    // ── Stick deadband — prevents drift when sticks released ──
+    private static final double STICK_DEADBAND = 0.05;
 
     // ── Limelight constants ────────────────────────────────────
     private static final double kP_LIMELIGHT        = 0.03;
@@ -75,16 +84,20 @@ public class BlueSideTele extends OpMode {
     private boolean circleWasPressed       = false;
     private boolean rightTriggerWasPressed = false;
     private boolean triangleWasPressed     = false;
+    private boolean squareWasPressed       = false;
     private boolean dpadLeftPressed        = false;
     private boolean dpadRightPressed       = false;
     private boolean gp2TriangleWasPressed  = false;
+
+    // ── Gate state ─────────────────────────────────────────────
+    private boolean followingGate = false;
 
     // ── Distance cache ─────────────────────────────────────────
     private double distanceToGoal = 0.0;
 
     @Override
     public void init() {
-        drivetrain     = new Drivetrain(hardwareMap);
+        follower       = Constants.createFollower(hardwareMap);
         intakeTransfer = new IntakeAndTransfer(hardwareMap);
         launcher       = new Launcher(hardwareMap);
         turret         = new Turret(hardwareMap);
@@ -96,10 +109,6 @@ public class BlueSideTele extends OpMode {
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
         limelight.pipelineSwitch(0);
         limelight.start();
-
-        // Pose is set in start() not here — Drivetrain constructor calls
-        // odo.resetPosAndIMU() which would wipe any pose set during init().
-        // start() runs after all hardware is fully settled.
 
         turret.setGoalPosition(GOAL_X, GOAL_Y);
         launcher.setHoodPosition(currentHoodPosition);
@@ -113,34 +122,65 @@ public class BlueSideTele extends OpMode {
 
     @Override
     public void start() {
-        // Set pose here — after hardware has fully initialized and
-        // odo.resetPosAndIMU() from Drivetrain constructor has completed.
         if (SharedData.hasAutonomousRun && SharedData.lastKnownPose != null) {
-            drivetrain.setPose(SharedData.lastKnownPose);
+            follower.setStartingPose(SharedData.lastKnownPose);
         } else {
-            drivetrain.setPose(new Pose(0, 0, 0));
+            follower.setStartingPose(new Pose(0, 0, 0));
         }
+        follower.startTeleOpDrive(true); // true = field centric
     }
 
     @Override
     public void loop() {
 
-        drivetrain.handleDrivetrain(gamepad1);
+        // ── Gate (GP1 square hold) ────────────────────────────
+        boolean squareNow = gamepad1.square && shootState == ShootState.IDLE;
+
+        if (squareNow && !squareWasPressed) {
+            Pose currentPose = follower.getPose();
+            PathChain toGate = follower.pathBuilder()
+                    .addPath(new BezierLine(currentPose, gateOpenerPose))
+                    .setLinearHeadingInterpolation(
+                            currentPose.getHeading(), gateOpenerPose.getHeading())
+                    .build();
+            follower.followPath(toGate, true);
+            followingGate = true;
+        }
+        if (!squareNow && squareWasPressed && followingGate) {
+            follower.startTeleOpDrive(true); // restore field centric on release
+            followingGate = false;
+        }
+        squareWasPressed = squareNow;
+
+        // ── Pedro update (must run every loop) ────────────────
+        follower.update();
+
+        // ── Drive input ────────────────────────────────────────
+        // Deadband applied before passing to Pedro to prevent drift
+        // when sticks are released. Pedro's internal momentum can
+        // cause slight movement from sub-threshold stick values.
+        if (!followingGate) {
+            double forward = applyDeadband(-gamepad1.left_stick_y);
+            double strafe  = applyDeadband(-gamepad1.left_stick_x);
+            double rotate  = applyDeadband(gamepad1.right_stick_x) * 0.6;
+            follower.setTeleOpDrive(forward, strafe, rotate, true);
+        }
 
         // ── Full reset (GP1 cross) ────────────────────────────
         if (gamepad1.cross) {
-            drivetrain.resetIMU();
-            drivetrain.resetPosition();
+            follower.setStartingPose(new Pose(0, 0, 0));
+            follower.startTeleOpDrive(true);
             turret.setToFacingFront();
             turret.resetEncoder();
             SharedData.hasAutonomousRun = false;
             autoAimEnabled = false;
             tagWasVisible  = false;
+            followingGate  = false;
         }
 
-        double robotX       = drivetrain.getX();
-        double robotY       = drivetrain.getY();
-        double robotHeading = drivetrain.getHeading();
+        double robotX       = follower.getPose().getX();
+        double robotY       = follower.getPose().getY();
+        double robotHeading = Math.toDegrees(follower.getPose().getHeading());
 
         // ── Distance → auto hood + velocity ───────────────────
         distanceToGoal    = turret.calculateDistanceToGoal(robotX, robotY);
@@ -286,9 +326,10 @@ public class BlueSideTele extends OpMode {
 
         // ── Telemetry ──────────────────────────────────────────
         telemetry.addLine("=== DEBUG ===");
-        telemetry.addData("Pose X",    "%.1f in", robotX);
-        telemetry.addData("Pose Y",    "%.1f in", robotY);
-        telemetry.addData("Distance",  "%.1f in", distanceToGoal);
+        telemetry.addData("Pose X",      "%.1f in", robotX);
+        telemetry.addData("Pose Y",      "%.1f in", robotY);
+        telemetry.addData("Distance",    "%.1f in", distanceToGoal);
+        telemetry.addData("Gate Active", followingGate ? "YES" : "NO");
         telemetry.addLine("=== MODE ===");
         telemetry.addData("Auto-Aim",    autoAimEnabled ? "ENABLED" : "MANUAL");
         telemetry.addData("Aim Mode",    tagWasVisible  ? "LIMELIGHT" : "ODOMETRY");
@@ -313,25 +354,28 @@ public class BlueSideTele extends OpMode {
         telemetry.addLine("GP2 Dpad = manual turret | GP2 Triangle = LL recal");
         telemetry.addLine("GP1 Options = auto-aim | GP2 Circle = flywheel");
         telemetry.addLine("GP1 RB = shoot | GP1 LB = abort | GP1 Cross = reset");
+        telemetry.addLine("GP1 Square (hold) = drive to gate");
         telemetry.update();
     }
 
-    // ── Limelight tag fetch ────────────────────────────────────
+    // ── Stick deadband ────────────────────────────────────────
+    private double applyDeadband(double value) {
+        return Math.abs(value) < STICK_DEADBAND ? 0.0 : value;
+    }
+
     private LLResultTypes.FiducialResult getTag() {
         try {
             LLResult result = limelight.getLatestResult();
             if (result != null && result.isValid()) {
                 List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
-                if (tags != null) {
+                if (tags != null)
                     for (LLResultTypes.FiducialResult t : tags)
                         if (t.getFiducialId() == TARGET_TAG_ID) return t;
-                }
             }
         } catch (Exception e) { /* skip frame */ }
         return null;
     }
 
-    // ── Shoot sequence ─────────────────────────────────────────
     private void startShootSequence() {
         if (!shooterRunning) {
             launcher.setFlywheelVelocity(currentVelocity);
@@ -368,8 +412,6 @@ public class BlueSideTele extends OpMode {
             case CLOSE_LATCH:
                 if (shootTimer.seconds() >= CLOSE_LATCH_WAIT_SEC) {
                     if (!intakeTransfer.isEmpty()) {
-                        // Go back to SPINUP — wait for flywheel to recover
-                        // before opening latch for next ball.
                         shootState = ShootState.SPINUP;
                         shootTimer.reset();
                     } else {
@@ -387,7 +429,6 @@ public class BlueSideTele extends OpMode {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────
     private static double clamp(double v, double min, double max) {
         return Math.max(min, Math.min(max, v));
     }
